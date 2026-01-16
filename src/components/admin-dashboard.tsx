@@ -1,0 +1,3579 @@
+import { useState, useRef, useEffect } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Button } from "./ui/button";
+import { Calendar as CalendarIcon, LogOut, Users, Clock, Trash2, DollarSign, CheckCircle, AlertCircle, XCircle, Ban, Filter, ChevronDown, ChevronUp, Copy, RefreshCw, CalendarCheck, Eye, Search, ArrowUp, Link2, Mail, Send, FileText, Image as ImageIcon, Paperclip, Building2, Upload, Download, Check } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
+import { format } from "date-fns";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Calendar } from "./ui/calendar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+import { User, sendSOAEmail, cancelBooking, updateBooking, createUnit, bulkUploadUnits, createUserWithUnit, bulkUploadUsers, getAllUnits, completeHandover, getProjectTemplates, uploadHandoverFile, deleteHandoverFile } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { Input } from "./ui/input";
+import { toast } from "sonner";
+import { Separator } from "./ui/separator";
+import { Badge } from "./ui/badge";
+import { PDFAnnotator } from "./pdf-annotator-canvas";
+
+interface Booking {
+  id: string;
+  date: Date;
+  time: string;
+  customerEmail: string;
+  status?: "confirmed" | "completed" | "cancelled";
+  handover_checklist?: string | null;
+  handover_declaration?: string | null;
+  handover_photo?: string | null;
+  client_signature?: string | null;
+  handover_checklist_url?: string | null;
+  handover_declaration_url?: string | null;
+  handover_photo_url?: string | null;
+  client_signature_url?: string | null;
+  user?: {
+    id: number;
+    full_name: string;
+    email: string;
+    payment_date?: string | null;
+    units?: Array<{
+      id: number;
+      unit: string;
+    }>;
+  };
+  co_owners?: Array<{
+    id: number;
+    full_name: string;
+    email: string;
+  }>;
+}
+
+interface AdminDashboardProps {
+  userEmail: string;
+  onLogout: () => void;
+  bookings: Booking[];
+  onDeleteBooking: (id: string) => void;
+  onUpdateBooking: (id: string, date: Date, time: string) => void;
+  users: User[];
+  onUpdateUserPaymentStatus: (userId: number, status: User["payment_status"], paymentDate: Date | null, receiptFile?: File) => void;
+  onRegeneratePassword: (email: string) => void;
+  onFilterUsers: (filters: { search?: string; payment_status?: string; project?: string }) => void;
+  onFilterBookings: (filters: { search?: string; status?: string; project?: string }) => void;
+  authToken: string;
+}
+
+const TIME_SLOTS = [
+  "09:00", "10:00", "11:00", "12:00", "13:00", "14:00",
+  "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"
+];
+
+export function AdminDashboard({ 
+  userEmail, 
+  onLogout, 
+  bookings, 
+  onDeleteBooking,
+  onUpdateBooking,
+  users,
+  onUpdateUserPaymentStatus,
+  onRegeneratePassword,
+  onFilterUsers,
+  onFilterBookings,
+  authToken
+}: AdminDashboardProps) {
+  const router = useRouter();
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [bookingsDateRange, setBookingsDateRange] = useState<{ from: Date | undefined, to: Date | undefined }>({ from: undefined, to: undefined });
+  const [activeTab, setActiveTab] = useState<"bookings" | "users" | "units">("users");
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [newPaymentStatus, setNewPaymentStatus] = useState<User["payment_status"]>("pending");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [newBookingStatus, setNewBookingStatus] = useState<Booking["status"]>("confirmed");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [viewingCredentials, setViewingCredentials] = useState<User | null>(null);
+  const [rebookingBooking, setRebookingBooking] = useState<Booking | null>(null);
+  const [rebookDate, setRebookDate] = useState<Date>();
+  const [rebookTime, setRebookTime] = useState<string>("");
+  const [cancellingBooking, setCancellingBooking] = useState(false);
+  const [rebookingInProgress, setRebookingInProgress] = useState(false);
+  const [displayedUsersCount, setDisplayedUsersCount] = useState(10);
+  const userListRef = useRef<HTMLDivElement>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailRecipients, setEmailRecipients] = useState<User[]>([]);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [projectSelectOpen, setProjectSelectOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<string>("all");
+  const [missingSOADialogOpen, setMissingSOADialogOpen] = useState(false);
+  const [usersWithoutSOA, setUsersWithoutSOA] = useState<User[]>([]);
+  const [addClientDialogOpen, setAddClientDialogOpen] = useState(false);
+  const [bulkUploadDialogOpen, setBulkUploadDialogOpen] = useState(false);
+  const [uploadUnitsDialogOpen, setUploadUnitsDialogOpen] = useState(false);
+  const [addUnitDialogOpen, setAddUnitDialogOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadUnitsFile, setUploadUnitsFile] = useState<File | null>(null);
+  const [selectedProjectForClient, setSelectedProjectForClient] = useState<string>("");
+  const [selectedProjectForBulk, setSelectedProjectForBulk] = useState<string>("");
+  const [selectedProjectForUnits, setSelectedProjectForUnits] = useState<string>("");
+  const [selectedProjectForNewUnit, setSelectedProjectForNewUnit] = useState<string>("");
+  const [selectedUnitId, setSelectedUnitId] = useState<string>("");
+  const [newUnitData, setNewUnitData] = useState({
+    unit_number: "",
+    floor: "",
+    building: "",
+    square_footage: "",
+    dewa_premise_number: "",
+  });
+  const [newClientData, setNewClientData] = useState({
+    full_name: "",
+    email: "",
+    unit_number: "",
+    mobile_number: "",
+    is_primary: true,
+  });
+  const [allUnits, setAllUnits] = useState<any[]>([]);
+  const [loadingUnits, setLoadingUnits] = useState(false);
+  const [allUnitsForListing, setAllUnitsForListing] = useState<any[]>([]);
+  const [loadingAllUnits, setLoadingAllUnits] = useState(false);
+  
+  // Unit Management filter states
+  const [unitSearch, setUnitSearch] = useState("");
+  const [unitSOAStatus, setUnitSOAStatus] = useState("all");
+  const [unitPaymentStatus, setUnitPaymentStatus] = useState("all");
+  const [unitHandoverStatus, setUnitHandoverStatus] = useState("all");
+  const [unitHandoverRequirements, setUnitHandoverRequirements] = useState("all");
+  const [unitBookingStatus, setUnitBookingStatus] = useState("all");
+  const [bookingDateRange, setBookingDateRange] = useState<{ from: Date | undefined, to: Date | undefined }>({ from: undefined, to: undefined });
+
+  // Handover completion states
+  const [handoverDialogOpen, setHandoverDialogOpen] = useState(false);
+  const [handoverBooking, setHandoverBooking] = useState<Booking | null>(null);
+  const [handoverChecklistTemplate, setHandoverChecklistTemplate] = useState<string | null>(null);
+  const [declarationTemplate, setDeclarationTemplate] = useState<string | null>(null);
+  const [annotatedChecklist, setAnnotatedChecklist] = useState<File | null>(null);
+  const [annotatedDeclaration, setAnnotatedDeclaration] = useState<File | null>(null);
+  const [handoverPhoto, setHandoverPhoto] = useState<File | null>(null);
+  const [handoverChecklistPreview, setHandoverChecklistPreview] = useState<string | null>(null);
+  const [handoverDeclarationPreview, setHandoverDeclarationPreview] = useState<string | null>(null);
+  const [handoverPhotoPreview, setHandoverPhotoPreview] = useState<string | null>(null);
+  const [clientSignature, setClientSignature] = useState<File | null>(null);
+  const [clientSignaturePreview, setClientSignaturePreview] = useState<string | null>(null);
+  const [isDrawingSignature, setIsDrawingSignature] = useState(false);
+  const [completingHandover, setCompletingHandover] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Celebration dialog state (for testing)
+  const [showCelebration, setShowCelebration] = useState(false);
+
+  // Helper function to get property ID by project name
+  const getPropertyIdByName = (projectName: string): number | null => {
+    const user = users.find(u => 
+      u.units?.some(unit => unit.property.project_name === projectName)
+    );
+    return user?.units?.find(unit => unit.property.project_name === projectName)?.property.id || null;
+  };
+
+  // Fetch all units when component mounts or when selectedProjectForClient changes
+  useEffect(() => {
+    if (selectedProjectForClient && authToken) {
+      const fetchUnits = async () => {
+        setLoadingUnits(true);
+        try {
+          const propertyId = getPropertyIdByName(selectedProjectForClient);
+          if (propertyId) {
+            const response = await getAllUnits(authToken, propertyId, "unclaimed");
+            setAllUnits(response.units || []);
+          }
+        } catch (error) {
+          console.error("Failed to fetch units:", error);
+          toast.error("Failed to load units");
+        } finally {
+          setLoadingUnits(false);
+        }
+      };
+      fetchUnits();
+    }
+  }, [selectedProjectForClient, authToken]);
+
+  // Fetch all units for listing tab when component mounts or tab changes to units or users
+  const fetchAllUnitsForListing = async () => {
+    setLoadingAllUnits(true);
+    try {
+      const filters = {
+        search: unitSearch,
+        soa_status: unitSOAStatus !== 'all' ? unitSOAStatus : undefined,
+        payment_status: unitPaymentStatus !== 'all' ? unitPaymentStatus : undefined,
+        handover_status: unitHandoverStatus !== 'all' ? unitHandoverStatus : undefined,
+        handover_requirements: unitHandoverRequirements !== 'all' ? unitHandoverRequirements : undefined,
+        booking_status: unitBookingStatus !== 'all' ? unitBookingStatus : undefined,
+        booking_date_from: bookingDateRange.from ? format(bookingDateRange.from, 'yyyy-MM-dd') : undefined,
+        booking_date_to: bookingDateRange.to ? format(bookingDateRange.to, 'yyyy-MM-dd') : undefined,
+        occupied: activeTab === 'users' ? 'true' : 'false', // Unit Management shows occupied, Unit Listing shows unoccupied
+      };
+      console.log('Fetching units with filters:', filters);
+      const response = await getAllUnits(authToken, undefined, undefined, filters);
+      console.log('Units response:', response);
+      setAllUnitsForListing(response.units || []);
+    } catch (error) {
+      console.error("Failed to fetch all units:", error);
+      toast.error("Failed to load units");
+    } finally {
+      setLoadingAllUnits(false);
+    }
+  };
+
+  // Debounced search effect (2 second delay)
+  useEffect(() => {
+    if ((activeTab === "units" || activeTab === "users") && authToken) {
+      const timeoutId = setTimeout(() => {
+        fetchAllUnitsForListing();
+      }, 2000);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [unitSearch]);
+
+  // Immediate effect for dropdown filters and tab changes
+  useEffect(() => {
+    if ((activeTab === "units" || activeTab === "users") && authToken) {
+      fetchAllUnitsForListing();
+    }
+  }, [activeTab, authToken, unitSOAStatus, unitPaymentStatus, unitHandoverStatus, unitHandoverRequirements, unitBookingStatus, bookingDateRange]);
+
+  // Pagination for users
+  const displayedUsers = users.slice(0, displayedUsersCount);
+  const hasMoreUsers = displayedUsersCount < users.length;
+
+  // Get unique projects from users
+  const userProjects = Array.from(
+    new Set(users.flatMap(u => u.units?.map(unit => unit.property.project_name) || []))
+  ).filter(Boolean);
+
+  // Reset pagination when users change
+  useEffect(() => {
+    setDisplayedUsersCount(10);
+  }, [users.length]);
+
+  // Infinite scroll handler for main window scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (activeTab !== "users" || !hasMoreUsers) return;
+
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const scrollHeight = document.documentElement.scrollHeight;
+      const clientHeight = window.innerHeight;
+      
+      // Load more when scrolled to 80% of the page
+      if (scrollTop + clientHeight >= scrollHeight - 300) {
+        setDisplayedUsersCount(prev => Math.min(prev + 10, users.length));
+      }
+    };
+
+    if (activeTab === "users") {
+      window.addEventListener('scroll', handleScroll);
+      return () => window.removeEventListener('scroll', handleScroll);
+    }
+  }, [activeTab, hasMoreUsers, users.length]);
+
+  // Get unique dates with bookings
+  const datesWithBookings = Array.from(
+    new Set(bookings.map((b) => b.date.toDateString()))
+  ).map((dateStr) => new Date(dateStr));
+
+  // Filter bookings by selected date
+  const filteredBookings = bookings.filter((b) => {
+    // Filter by selected date (single date filter)
+    if (selectedDate && b.date.toDateString() !== selectedDate.toDateString()) {
+      return false;
+    }
+    // Filter by date range
+    if (bookingsDateRange.from && b.date < bookingsDateRange.from) {
+      return false;
+    }
+    if (bookingsDateRange.to) {
+      const endOfDay = new Date(bookingsDateRange.to);
+      endOfDay.setHours(23, 59, 59, 999);
+      if (b.date > endOfDay) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const sortedBookings = [...filteredBookings].sort((a, b) => {
+    const dateCompare = a.date.getTime() - b.date.getTime();
+    if (dateCompare !== 0) return dateCompare;
+    return a.time.localeCompare(b.time);
+  });
+
+  const handleUpdatePaymentStatus = () => {
+    if (editingUser) {
+      // Validate receipt for fully_paid status
+      if (newPaymentStatus === "fully_paid" && !receiptFile) {
+        toast.error("Please upload a receipt before marking as fully paid");
+        return;
+      }
+      
+      const paymentDate = newPaymentStatus === "fully_paid" ? new Date() : null;
+      onUpdateUserPaymentStatus(editingUser.id, newPaymentStatus, paymentDate, receiptFile || undefined);
+      setEditingUser(null);
+      setReceiptFile(null);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+      if (!validTypes.includes(file.type)) {
+        toast.error("Please upload a PDF, JPEG, JPG, or PNG file");
+        return;
+      }
+      
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("File size must be less than 10MB");
+        return;
+      }
+      
+      setReceiptFile(file);
+    }
+  };
+
+  const handleSendEmail = async (sendToAll: boolean) => {
+    if (sendToAll) {
+      // Show project selection dialog
+      setProjectSelectOpen(true);
+    } else {
+      // Send to selected recipients
+      if (emailRecipients.length === 0) {
+        toast.error("Please select at least one user from the table using checkboxes");
+        return;
+      }
+      
+      // Check if all selected users have SOA uploaded
+      const missingSOA = emailRecipients.filter(user => 
+        !user.attachments?.some(att => att.type === "soa")
+      );
+      
+      if (missingSOA.length > 0) {
+        setUsersWithoutSOA(missingSOA);
+        setMissingSOADialogOpen(true);
+        return;
+      }
+      
+      openEmailDialog(emailRecipients);
+    }
+  };
+
+  const handleProjectSelected = () => {
+    let recipients = users;
+    
+    // Filter by project if not "all"
+    if (selectedProject !== "all") {
+      recipients = users.filter(user => 
+        user.units?.some(unit => unit.property.project_name === selectedProject)
+      );
+    }
+    
+    if (recipients.length === 0) {
+      toast.error("No users found for the selected project");
+      return;
+    }
+
+    // Check if all users have SOA uploaded
+    const usersWithoutSOA = recipients.filter(user => 
+      !user.attachments?.some(att => att.type === "soa")
+    );
+
+    if (usersWithoutSOA.length > 0) {
+      const userNames = usersWithoutSOA.slice(0, 3).map(u => u.full_name).join(", ");
+      const moreText = usersWithoutSOA.length > 3 ? ` and ${usersWithoutSOA.length - 3} more` : "";
+      toast.error(`Cannot send: ${usersWithoutSOA.length} user(s) missing SOA (${userNames}${moreText})`);
+      return;
+    }
+    
+    setProjectSelectOpen(false);
+    openEmailDialog(recipients);
+  };
+
+  const openEmailDialog = (recipients: User[]) => {
+    // Use Handover Notice template (same as individual user emails)
+    const defaultSubject = "Handover Notice";
+    const defaultBody = ""; // Message handled by Laravel blade template
+    
+    setEmailRecipients(recipients);
+    setEmailSubject(defaultSubject);
+    setEmailBody(defaultBody);
+    setEmailDialogOpen(true);
+  };
+
+  const handleSendEmailSubmit = async () => {
+    console.log('=== handleSendEmailSubmit called ===');
+    console.log('Recipients count:', emailRecipients.length);
+    console.log('Subject:', emailSubject);
+    
+    if (emailRecipients.length === 0) {
+      toast.error("Please select at least one recipient");
+      return;
+    }
+    
+    if (!emailSubject.trim()) {
+      toast.error("Please provide email subject");
+      return;
+    }
+    
+    toast.info("Starting email send process...");
+    setSendingEmail(true);
+    
+    try {
+      const recipientIds = emailRecipients.map(user => user.id);
+      console.log('Sending email to:', recipientIds);
+      console.log('Subject:', emailSubject);
+      console.log('Message:', emailBody);
+      console.log('Auth token:', authToken ? 'Present' : 'Missing');
+      
+      const result = await sendSOAEmail(recipientIds, emailSubject, emailBody, authToken);
+      
+      console.log('Email send result:', result);
+      toast.success(`${result.message}\n\nSent: ${result.sent_count}, Failed: ${result.failed_count}`);
+      setEmailDialogOpen(false);
+      setEmailRecipients([]);
+      setEmailSubject("");
+      setEmailBody("");
+    } catch (error: any) {
+      console.error('Failed to send email:', error);
+      const errorMessage = error?.message || 'Failed to send email. Please try again.';
+      toast.error(errorMessage);
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const toggleRecipient = (user: User) => {
+    setEmailRecipients(prev => {
+      const exists = prev.find(u => u.id === user.id);
+      
+      if (exists) {
+        // When deselecting, also deselect co-owners
+        const coOwnerIds = new Set<number>();
+        user.units?.forEach(unit => {
+          unit.users?.forEach(u => {
+            if (u.id !== user.id) coOwnerIds.add(u.id);
+          });
+        });
+        
+        return prev.filter(u => u.id !== user.id && !coOwnerIds.has(u.id));
+      } else {
+        // When selecting, also select co-owners
+        const toAdd = [user];
+        const coOwnerIds = new Set<number>();
+        
+        user.units?.forEach(unit => {
+          unit.users?.forEach(u => {
+            if (u.id !== user.id && !coOwnerIds.has(u.id)) {
+              coOwnerIds.add(u.id);
+              const coOwner = users.find(usr => usr.id === u.id);
+              if (coOwner && !prev.find(p => p.id === coOwner.id)) {
+                toAdd.push(coOwner);
+              }
+            }
+          });
+        });
+        
+        return [...prev, ...toAdd];
+      }
+    });
+  };
+
+  const handleUpdateBookingStatus = async () => {
+    if (editingBooking) {
+      // If cancelled, delete the booking via API
+      if (newBookingStatus === "cancelled") {
+        setCancellingBooking(true);
+        try {
+          const token = localStorage.getItem('authToken');
+          if (!token) {
+            toast.error('No authentication token found');
+            return;
+          }
+          
+          await cancelBooking(parseInt(editingBooking.id), token);
+          onDeleteBooking(editingBooking.id);
+          toast.success('Booking cancelled successfully');
+          setEditingBooking(null);
+        } catch (error: any) {
+          console.error('Error cancelling booking:', error);
+          toast.error(error.message || 'Failed to cancel booking');
+        } finally {
+          setCancellingBooking(false);
+        }
+      } else {
+        setEditingBooking(null);
+      }
+    }
+  };
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const startCamera = async () => {
+    setShowCamera(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user', width: 1280, height: 720 } 
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      toast.error("Could not access camera. Please check permissions.");
+      setShowCamera(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+      setShowCamera(false);
+    }
+  };
+
+  const capturePhoto = async () => {
+    if (videoRef.current && canvasRef.current && handoverBooking) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0);
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const file = new File([blob], `handover-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            try {
+              // Upload immediately
+              await uploadHandoverFile(Number(handoverBooking.id), 'handover_photo', file, authToken);
+              setHandoverPhoto(file);
+              setHandoverPhotoPreview(canvas.toDataURL('image/jpeg'));
+              stopCamera();
+              toast.success("Photo captured and uploaded!");
+            } catch (error) {
+              console.error("Upload error:", error);
+              toast.error("Failed to upload photo");
+              stopCamera();
+            }
+          }
+        }, 'image/jpeg', 0.9);
+      }
+    }
+  };
+
+  const handleRebook = async () => {
+    if (rebookingBooking && rebookDate && rebookTime) {
+      setRebookingInProgress(true);
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) {
+          toast.error('No authentication token found');
+          return;
+        }
+        
+        // Format date as YYYY-MM-DD
+        const formattedDate = format(rebookDate, 'yyyy-MM-dd');
+        
+        await updateBooking(
+          parseInt(rebookingBooking.id),
+          {
+            booked_date: formattedDate,
+            booked_time: rebookTime
+          },
+          token
+        );
+        
+        // Update local state only after successful API call
+        onUpdateBooking(rebookingBooking.id, rebookDate, rebookTime);
+        toast.success('Booking rescheduled successfully');
+        setRebookingBooking(null);
+        setRebookDate(undefined);
+        setRebookTime("");
+      } catch (error: any) {
+        console.error('Error rebooking:', error);
+        toast.error(error.message || 'Failed to reschedule booking');
+      } finally {
+        setRebookingInProgress(false);
+      }
+    }
+  };
+
+  const getBookedTimesForDate = (date: Date | undefined) => {
+    if (!date) return [];
+    // Exclude the current booking being rebooked from the check
+    return bookings
+      .filter((b) => b.id !== rebookingBooking?.id && b.date.toDateString() === date.toDateString())
+      .map((b) => b.time);
+  };
+
+  const bookedTimesForRebookDate = getBookedTimesForDate(rebookDate);
+
+  const getBookingStatusBadge = (status?: Booking["status"]) => {
+    const bookingStatus = status || "confirmed";
+    switch (bookingStatus) {
+      case "completed":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircle className="w-3 h-3" />
+            Completed
+          </span>
+        );
+      case "cancelled":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <XCircle className="w-3 h-3" />
+            Cancelled
+          </span>
+        );
+      case "confirmed":
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <CalendarIcon className="w-3 h-3" />
+            Confirmed
+          </span>
+        );
+    }
+  };
+
+  const getStatusBadge = (status: User["payment_status"]) => {
+    switch (status) {
+      case "fully_paid":
+        return (
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircle className="w-3 h-3" />
+            Fully Paid
+          </span>
+        );
+      case "partial":
+        return (
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            <AlertCircle className="w-3 h-3" />
+            Partial
+          </span>
+        );
+      case "pending":
+        return (
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <XCircle className="w-3 h-3" />
+            Pending
+          </span>
+        );
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-white p-4">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8 bg-black text-white rounded-lg p-6 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+              <Users className="w-5 h-5 text-black" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold">Admin Dashboard</h1>
+              <p className="text-sm text-gray-300">{userEmail}</p>
+            </div>
+          </div>
+          <Button variant="outline" onClick={onLogout} className="gap-2 bg-white text-black hover:bg-gray-100 border-0">
+            <LogOut className="w-4 h-4" />
+            Logout
+          </Button>
+        </div>
+
+        {/* Tabs */}
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setActiveTab("users")}
+              className={activeTab === "users" ? "bg-black text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}
+            >
+              <Building2 className="w-4 h-4 mr-2" />
+              Unit Management
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                activeTab === "users" ? "bg-white text-black" : "bg-gray-300 text-gray-700"
+              }`}>
+                {users.length}
+              </span>
+            </Button>
+            <Button
+              onClick={() => setActiveTab("units")}
+              className={activeTab === "units" ? "bg-black text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}
+            >
+              <Building2 className="w-4 h-4 mr-2" />
+              Unit Listing
+            </Button>
+            <Button
+              onClick={() => setActiveTab("bookings")}
+              className={activeTab === "bookings" ? "bg-black text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}
+            >
+              <CalendarIcon className="w-4 h-4 mr-2" />
+              Bookings
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                activeTab === "bookings" ? "bg-white text-black" : "bg-gray-300 text-gray-700"
+              }`}>
+                {bookings.length}
+              </span>
+            </Button>
+          </div>
+          
+          <div className="flex gap-2">
+            {activeTab === "users" && (
+              <>
+                <Button
+                  onClick={() => handleSendEmail(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  Send Email to All
+                </Button>
+                <Button
+                  onClick={() => handleSendEmail(false)}
+                  variant="outline"
+                  className="border border-blue-600 text-blue-600 hover:bg-blue-50 gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                  Send to Selected
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Bookings Tab */}
+        {activeTab === "bookings" && (
+          <>
+            {/* Filter Section */}
+            {filterOpen && (
+              <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <div className="mb-3">
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-gray-700">Date Range:</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-[240px] justify-start text-left font-normal"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {bookingsDateRange.from ? (
+                            bookingsDateRange.to ? (
+                              <>
+                                {format(bookingsDateRange.from, "MMM dd")} -{" "}
+                                {format(bookingsDateRange.to, "MMM dd, y")}
+                              </>
+                            ) : (
+                              format(bookingsDateRange.from, "LLL dd, y")
+                            )
+                          ) : (
+                            <span>Pick date range</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="range"
+                          selected={{ from: bookingsDateRange.from, to: bookingsDateRange.to }}
+                          onSelect={(range: any) => setBookingsDateRange({ from: range?.from, to: range?.to })}
+                          numberOfMonths={2}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    {(bookingsDateRange.from || bookingsDateRange.to) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBookingsDateRange({ from: undefined, to: undefined })}
+                      >
+                        Clear Range
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedDate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedDate(null)}
+                      className="bg-white border-gray-300 hover:bg-gray-100"
+                    >
+                      Clear Single Date
+                    </Button>
+                  )}
+                  {datesWithBookings.map((date) => (
+                    <Button
+                      key={date.toISOString()}
+                      variant="outline"
+                      onClick={() => setSelectedDate(date)}
+                      className={
+                        selectedDate?.toDateString() === date.toDateString()
+                          ? "bg-black text-white hover:bg-gray-800 border-black"
+                          : "bg-white border-gray-300 hover:bg-gray-100"
+                      }
+                    >
+                      <CalendarIcon className="w-4 h-4 mr-2" />
+                      {format(date, "MMM d, yyyy")}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Bookings List */}
+            <Card className="border border-gray-200 shadow">
+              <CardHeader className="bg-black text-white pb-4 rounded-t-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-white">All Bookings</CardTitle>
+                    <CardDescription className="text-gray-300">
+                      {filteredBookings.length === 0
+                        ? "No bookings found"
+                        : `${filteredBookings.length} booking${filteredBookings.length !== 1 ? "s" : ""}`}
+                      {selectedDate && ` for ${format(selectedDate, "MMM d, yyyy")}`}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {sortedBookings.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <CalendarIcon className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                    <p>No bookings to display</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Number</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booked Time</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {sortedBookings.map((booking) => {
+                          const user = booking.user || users.find(u => u.email === booking.customerEmail);
+                          const allOwners = user ? [user.full_name] : [];
+                          if (booking.co_owners && booking.co_owners.length > 0) {
+                            allOwners.push(...booking.co_owners.map(co => co.full_name));
+                          }
+                          const ownerNames = allOwners.join(', ');
+                          
+                          // Find the correct unit by unit_id from the booking
+                          const bookedUnit = user?.units?.find(u => u.id === (booking as any).unit_id);
+                          
+                          return (
+                            <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {bookedUnit?.unit || user?.units?.[0]?.unit || "N/A"}
+                              </td>
+                              <td className="px-6 py-4 text-sm text-gray-900">
+                                {ownerNames || "Unknown"}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">{format(booking.date, "MMM d, yyyy")}</div>
+                                <div className="text-sm text-gray-500 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {booking.time}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {user?.payment_date ? format(new Date(user.payment_date), "MMM d, yyyy") : "N/A"}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                {getBookingStatusBadge(booking.status)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <div className="flex items-center justify-end gap-2">
+                                  {(!booking.status || booking.status === "confirmed") && (
+                                    <>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={async () => {
+                                          console.log('Booking object:', booking);
+                                          console.log('handover_checklist:', booking.handover_checklist);
+                                          console.log('handover_declaration:', booking.handover_declaration);
+                                          console.log('handover_photo:', booking.handover_photo);
+                                          console.log('client_signature:', booking.client_signature);
+                                          
+                                          setHandoverBooking(booking);
+                                          setHandoverDialogOpen(true);
+                                          
+                                          // Load templates
+                                          setLoadingTemplates(true);
+                                          try {
+                                            const templates = await getProjectTemplates(
+                                              parseInt(booking.id),
+                                              authToken
+                                            );
+                                            setHandoverChecklistTemplate(templates.handover_checklist_template);
+                                            setDeclarationTemplate(templates.declaration_template);
+                                            
+                                            // Load existing handover files and set previews
+                                            console.log('Setting previews...');
+                                            console.log('handover_checklist_url:', booking.handover_checklist_url);
+                                            console.log('handover_declaration_url:', booking.handover_declaration_url);
+                                            console.log('handover_photo_url:', booking.handover_photo_url);
+                                            console.log('client_signature_url:', booking.client_signature_url);
+                                            
+                                            if (booking.handover_checklist_url) {
+                                              setHandoverChecklistPreview(booking.handover_checklist_url);
+                                              console.log('Set checklist preview to:', booking.handover_checklist_url);
+                                            } else {
+                                              setHandoverChecklistPreview(null);
+                                            }
+                                            
+                                            if (booking.handover_declaration_url) {
+                                              setHandoverDeclarationPreview(booking.handover_declaration_url);
+                                              console.log('Set declaration preview to:', booking.handover_declaration_url);
+                                            } else {
+                                              setHandoverDeclarationPreview(null);
+                                            }
+                                            
+                                            if (booking.handover_photo_url) {
+                                              setHandoverPhotoPreview(booking.handover_photo_url);
+                                              console.log('Set photo preview to:', booking.handover_photo_url);
+                                            } else {
+                                              setHandoverPhotoPreview(null);
+                                            }
+                                            
+                                            if (booking.client_signature_url) {
+                                              setClientSignaturePreview(booking.client_signature_url);
+                                              console.log('Set signature preview to:', booking.client_signature_url);
+                                            } else {
+                                              setClientSignaturePreview(null);
+                                            }
+                                          } catch (error) {
+                                            console.error("Error loading templates:", error);
+                                            toast.error("Failed to load templates");
+                                          } finally {
+                                            setLoadingTemplates(false);
+                                          }
+                                        }}
+                                        className="bg-green-50 hover:bg-green-100 border-green-200 text-green-700"
+                                      >
+                                        <CheckCircle className="w-3 h-3 mr-1" />
+                                        Complete Handover
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setEditingBooking(booking);
+                                          setNewBookingStatus("cancelled");
+                                        }}
+                                        className="bg-red-50 hover:bg-red-100 border-red-200 text-red-700"
+                                      >
+                                        <Ban className="w-3 h-3 mr-1" />
+                                        Cancel
+                                      </Button>
+                                    </>
+                                  )}
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setRebookingBooking(booking)}
+                                    className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+                                  >
+                                    <CalendarCheck className="w-3 h-3 mr-1" />
+                                    Rebook
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* Users Tab */}
+        {activeTab === "users" && (
+          <Card className="border border-gray-200 shadow">
+            <CardHeader className="bg-black text-white pb-4 rounded-t-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-white">Unit Management</CardTitle>
+                  <CardDescription className="text-gray-300">
+                    Manage units and their owners
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setAddClientDialogOpen(true)}
+                    className="bg-white text-black hover:bg-gray-100"
+                    size="sm"
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    Add Client
+                  </Button>
+                  <Button
+                    onClick={() => setBulkUploadDialogOpen(true)}
+                    className="bg-white text-black hover:bg-gray-100"
+                    size="sm"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Bulk Upload
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {/* Search and Filters */}
+              <div className="p-4 border-b border-gray-200 bg-gray-50">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Search */}
+                  <div className="w-[180px]">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <Input
+                        placeholder="Search..."
+                        value={unitSearch}
+                        onChange={(e) => setUnitSearch(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* SOA Status Filter */}
+                  <div className="w-[120px]">
+                    <Select value={unitSOAStatus} onValueChange={setUnitSOAStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="SOA" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All SOA</SelectItem>
+                        <SelectItem value="uploaded">Uploaded</SelectItem>
+                        <SelectItem value="not_uploaded">Not Uploaded</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {/* Payment Status Filter */}
+                  <div className="w-[120px]">
+                    <Select value={unitPaymentStatus} onValueChange={setUnitPaymentStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Payment" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Payment</SelectItem>
+                        <SelectItem value="fully_paid">Fully Paid</SelectItem>
+                        <SelectItem value="partial">Partial</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {/* Handover Status Filter */}
+                  <div className="w-[120px]">
+                    <Select value={unitHandoverStatus} onValueChange={setUnitHandoverStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="H. Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="scheduled">Scheduled</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {/* Handover Requirements Filter */}
+                  <div className="w-[120px]">
+                    <Select value={unitHandoverRequirements} onValueChange={setUnitHandoverRequirements}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="H. Req" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Req</SelectItem>
+                        <SelectItem value="complete">Complete</SelectItem>
+                        <SelectItem value="incomplete">Incomplete</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {/* Booking Status Filter */}
+                  <div className="w-[120px]">
+                    <Select value={unitBookingStatus} onValueChange={setUnitBookingStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Booking" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Booking</SelectItem>
+                        <SelectItem value="booked">Booked</SelectItem>
+                        <SelectItem value="not_booked">Not Booked</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {/* Booking Date Range Filter */}
+                  <div className="flex items-center gap-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-[240px] justify-start text-left font-normal"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {bookingDateRange.from ? (
+                            bookingDateRange.to ? (
+                              <>
+                                {format(bookingDateRange.from, "MMM dd")} -{" "}
+                                {format(bookingDateRange.to, "MMM dd, y")}
+                              </>
+                            ) : (
+                              format(bookingDateRange.from, "LLL dd, y")
+                            )
+                          ) : (
+                            <span>Date range</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="range"
+                          selected={{ from: bookingDateRange.from, to: bookingDateRange.to }}
+                          onSelect={(range: any) => setBookingDateRange({ from: range?.from, to: range?.to })}
+                          numberOfMonths={2}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    {(bookingDateRange.from || bookingDateRange.to) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBookingDateRange({ from: undefined, to: undefined })}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Number</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client Names</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SOA Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Handover Requirements</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Handover Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booking Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {loadingAllUnits ? (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                          Loading units...
+                        </td>
+                      </tr>
+                    ) : (() => {
+                      // Build units map from allUnitsForListing (which has full unit data)
+                      const unitsMap = new Map();
+                      
+                      // Start with all units from backend (including full details)
+                      allUnitsForListing.forEach(unit => {
+                        unitsMap.set(unit.id, {
+                          ...unit,
+                          owners: []
+                        });
+                      });
+                      
+                      // Then add owner information ONLY for units that are already in the map
+                      users.forEach(user => {
+                        user.units?.forEach(unit => {
+                          if (unitsMap.has(unit.id)) {
+                            // Unit exists in map (passed filters), add owner
+                            unitsMap.get(unit.id).owners.push({
+                              ...user,
+                              is_primary: unit.pivot?.is_primary
+                            });
+                          }
+                          // Don't add units that were filtered out by backend
+                        });
+                      });
+
+                      // Get all units from the map (backend already filtered)
+                      const allUnits = Array.from(unitsMap.values());
+
+                      if (allUnits.length === 0) {
+                        const hasActiveFilters = unitSearch || unitSOAStatus !== 'all' || unitPaymentStatus !== 'all' || 
+                                                 unitHandoverStatus !== 'all' || unitHandoverRequirements !== 'all' || 
+                                                 unitBookingStatus !== 'all' || bookingDateRange.from || bookingDateRange.to;
+                        return (
+                          <tr>
+                            <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                              {hasActiveFilters ? 'No units match the selected filters.' : 'No units found. Add units and owners to get started.'}
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return allUnits.map((unit) => {
+                        const hasOwners = unit.owners && unit.owners.length > 0;
+                        const primaryOwner = unit.owners?.find((o: any) => o.is_primary);
+                        const coOwners = unit.owners?.filter((o: any) => !o.is_primary) || [];
+                        
+                        // Get all owner names (full names)
+                        const ownerNames = unit.owners?.map((o: any) => o.full_name).join(', ') || 'No owner';
+                        
+                        // Check SOA status
+                        const attachments = unit.attachments || [];
+                        const hasSOA = attachments.some((att: any) => att.type === 'soa');
+                        
+                        // Calculate handover requirements
+                        const hasMortgage = unit.has_mortgage || false;
+                        const totalRequirements = hasMortgage ? 6 : 5;
+                        const requiredTypes = hasMortgage 
+                          ? ['payment_proof', 'ac_connection', 'dewa_connection', 'service_charge_ack', 'developer_noc', 'bank_noc']
+                          : ['payment_proof', 'ac_connection', 'dewa_connection', 'service_charge_ack', 'developer_noc'];
+                        const uploadedCount = requiredTypes.filter(type => 
+                          attachments.some((att: any) => att.type === type)
+                        ).length;
+                        const allRequirementsMet = uploadedCount === totalRequirements;
+                        
+                        // Get booking info
+                        const booking = unit.booking;
+                        
+                        return (
+                          <tr 
+                            key={unit.id} 
+                            className="hover:bg-gray-50 cursor-pointer transition-colors"
+                            onClick={() => router.push(`/admin/units/${unit.id}`)}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{unit.unit}</div>
+                              <div className="text-xs text-gray-500">{unit.property?.project_name || 'N/A'}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm text-gray-900">
+                                {ownerNames}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {hasSOA ? (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  ✓ Uploaded
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                  Not Uploaded
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {unit.payment_status ? (
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                  unit.payment_status === 'fully_paid' 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : unit.payment_status === 'partial'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {unit.payment_status === 'fully_paid' ? 'Fully Paid' : 
+                                   unit.payment_status === 'partial' ? 'Partial' : 'Pending'}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-gray-400">N/A</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-sm ${allRequirementsMet ? 'text-green-600 font-medium' : 'text-gray-600'}`}>
+                                  {uploadedCount}/{totalRequirements}
+                                </span>
+                                {allRequirementsMet && <CheckCircle className="w-4 h-4 text-green-600" />}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {unit.handover_status ? (
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                  unit.handover_status === 'completed' 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : unit.handover_status === 'ready'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {unit.handover_status === 'completed' ? 'Completed' : 
+                                   unit.handover_status === 'ready' ? 'Ready' : 'Pending'}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                  Pending
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {booking && booking.booked_date ? (
+                                <div className="text-sm">
+                                  <div className="font-medium text-gray-900">
+                                    {format(new Date(booking.booked_date), 'MMM d, yyyy')}
+                                  </div>
+                                  <div className="text-gray-500 flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    {booking.booked_time}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-gray-400">Not Booked</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Units Tab */}
+        {activeTab === "units" && (
+          <Card className="border border-gray-200 shadow">
+            <CardHeader className="bg-black text-white pb-4 rounded-t-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-white">Unit Listing</CardTitle>
+                  <CardDescription className="text-gray-300">
+                    All units with their owners and status
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setAddUnitDialogOpen(true)}
+                    className="bg-white text-black hover:bg-gray-100"
+                    size="sm"
+                  >
+                    <Building2 className="w-4 h-4 mr-2" />
+                    Add Unit
+                  </Button>
+                  <Button
+                    onClick={() => setUploadUnitsDialogOpen(true)}
+                    className="bg-white text-black hover:bg-gray-100"
+                    size="sm"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Units
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Number</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Project</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DEWA Premise Number</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {loadingAllUnits ? (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                          Loading units...
+                        </td>
+                      </tr>
+                    ) : (() => {
+                      // Start with all units from the backend
+                      const unitsMap = new Map();
+                      
+                      // Add all units from backend (including unowned ones)
+                      allUnitsForListing.forEach(unit => {
+                        unitsMap.set(unit.id, {
+                          ...unit,
+                          owners: []
+                        });
+                      });
+                      
+                      // Then add owner information from users
+                      users.forEach(user => {
+                        user.units?.forEach(unit => {
+                          if (!unitsMap.has(unit.id)) {
+                            unitsMap.set(unit.id, {
+                              ...unit,
+                              owners: []
+                            });
+                          }
+                          unitsMap.get(unit.id).owners.push({
+                            ...user,
+                            is_primary: unit.pivot?.is_primary
+                          });
+                        });
+                      });
+
+                      // Filter to show only unoccupied units (units with no owners)
+                      const allDisplayUnits = Array.from(unitsMap.values()).filter(unit => unit.owners.length === 0);
+
+                      if (allDisplayUnits.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                              No units found. Click "Add Unit" or "Upload Units" to get started.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return allDisplayUnits.map((unit) => {
+                        return (
+                          <tr 
+                            key={unit.id} 
+                            className="hover:bg-gray-50 cursor-pointer transition-colors"
+                            onClick={() => router.push(`/admin/units/${unit.id}`)}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{unit.unit}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-600">{unit.property?.project_name || 'N/A'}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-600">{unit.dewa_premise_number || 'N/A'}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Unoccupied
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Edit Payment Status Dialog */}
+      <Dialog open={!!editingUser} onOpenChange={(open) => {
+        if (!open) {
+          setEditingUser(null);
+          setReceiptFile(null);
+        }
+      }}>
+        <DialogContent className="border border-gray-200">
+          <DialogHeader>
+            <DialogTitle>Update Payment Status</DialogTitle>
+            <DialogDescription>
+              Update the payment status for {editingUser?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>User</Label>
+              <p className="text-sm text-gray-600">{editingUser?.email}</p>
+              <p className="text-sm text-gray-600">{editingUser?.units?.map(u => u.unit).join(', ') || 'N/A'}</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Payment Status</Label>
+              <Select
+                value={newPaymentStatus}
+                onValueChange={(value) => setNewPaymentStatus(value as User["payment_status"])}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="partial">Partial Payment</SelectItem>
+                  <SelectItem value="fully_paid">Fully Paid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {newPaymentStatus === "fully_paid" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="receipt">Receipt Upload *</Label>
+                  <Input
+                    id="receipt"
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/jpg,image/png"
+                    onChange={handleFileChange}
+                    className="cursor-pointer"
+                  />
+                  {receiptFile && (
+                    <p className="text-sm text-green-600">✓ {receiptFile.name}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Required for fully paid status. PDF, JPEG, JPG, or PNG (max 10MB)
+                  </p>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-sm text-green-800">
+                    Payment date will be set to today. User can book 3 days after this date.
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setEditingUser(null);
+              setReceiptFile(null);
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdatePaymentStatus} 
+              className="bg-black hover:bg-gray-800 text-white"
+              disabled={newPaymentStatus === "fully_paid" && !receiptFile}
+            >
+              Update Status
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Credentials Dialog */}
+      <Dialog open={!!viewingCredentials} onOpenChange={(open) => !open && setViewingCredentials(null)}>
+        <DialogContent className="border border-gray-200 max-w-md">
+          <DialogHeader>
+            <DialogTitle>Customer Login Credentials</DialogTitle>
+            <DialogDescription>
+              Send these credentials to {viewingCredentials?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-600">Email Address</Label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="text-sm font-mono text-gray-900">{viewingCredentials?.email}</p>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => viewingCredentials && copyToClipboard(viewingCredentials.email, `email-${viewingCredentials.email}`)}
+                    className="shrink-0"
+                  >
+                    {copiedField === `email-${viewingCredentials?.email}` ? (
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-600">Password</Label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    {/* <p className="text-sm font-mono text-gray-900">{viewingCredentials?.password}</p> */}
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    // onClick={() => viewingCredentials && copyToClipboard(viewingCredentials.password, `password-${viewingCredentials.email}`)}
+                    className="shrink-0"
+                  >
+                    {copiedField === `password-${viewingCredentials?.email}` ? (
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => viewingCredentials && onRegeneratePassword(viewingCredentials.email)}
+                    title="Regenerate password"
+                    className="shrink-0"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-800">
+                💡 Click the copy icon to copy credentials. Use the refresh icon to generate a new password.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setViewingCredentials(null)} className="bg-black hover:bg-gray-800 text-white">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rebook Dialog */}
+      <Dialog open={!!rebookingBooking} onOpenChange={(open) => {
+        if (!open) {
+          setRebookingBooking(null);
+          setRebookDate(undefined);
+          setRebookTime("");
+        }
+      }}>
+        <DialogContent className="border border-gray-200 max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>Rebook Appointment</DialogTitle>
+            <DialogDescription>
+              Select a new date and time for this booking
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Current Booking</Label>
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-sm text-gray-900">
+                  {rebookingBooking && format(rebookingBooking.date, "EEEE, MMMM d, yyyy")} at {rebookingBooking?.time}
+                </p>
+                <p className="text-xs text-gray-600 mt-1">{rebookingBooking?.customerEmail}</p>
+              </div>
+            </div>
+            
+            <div className="flex flex-col md:flex-row gap-6">
+              <div className="md:w-[55%] space-y-2">
+                <Label>Select New Date</Label>
+                <Calendar
+                  mode="single"
+                  selected={rebookDate}
+                  onSelect={setRebookDate}
+                  disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                  className="rounded-md border"
+                />
+              </div>
+              
+              <div className="md:w-[45%] space-y-2">
+                <Label>Select New Time Slot</Label>
+                {!rebookDate ? (
+                  <div className="flex items-center justify-center h-full text-sm text-gray-500">
+                    <p>Please select a date first</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 max-h-[350px] overflow-y-auto pr-2">
+                    {TIME_SLOTS.map((time) => {
+                      const isBooked = bookedTimesForRebookDate.includes(time);
+                      return (
+                        <Button
+                          key={time}
+                          onClick={() => setRebookTime(time)}
+                          disabled={isBooked}
+                          variant={rebookTime === time ? "default" : "outline"}
+                          className={`
+                            ${rebookTime === time ? "bg-black text-white" : ""}
+                            ${isBooked ? "opacity-50 cursor-not-allowed" : ""}
+                          `}
+                        >
+                          <Clock className="w-3 h-3 mr-2" />
+                          {time}
+                          {isBooked && " (Booked)"}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {rebookDate && rebookTime && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  ✓ New appointment: {format(rebookDate, "EEEE, MMMM d, yyyy")} at {rebookTime}
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setRebookingBooking(null);
+                setRebookDate(undefined);
+                setRebookTime("");
+              }}
+              disabled={rebookingInProgress}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleRebook}
+              disabled={!rebookDate || !rebookTime || rebookingInProgress}
+              className="bg-black hover:bg-gray-800 text-white"
+            >
+              {rebookingInProgress ? "Rebooking..." : "Confirm Rebook"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Handover Completion Dialog */}
+      <Dialog open={handoverDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setHandoverDialogOpen(false);
+          setHandoverBooking(null);
+          setAnnotatedChecklist(null);
+          setAnnotatedDeclaration(null);
+          setHandoverPhoto(null);
+          setHandoverPhotoPreview(null);
+          setClientSignature(null);
+          // Clear signature canvas
+          const canvas = signatureCanvasRef.current;
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+          }
+          stopCamera();
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">Complete Handover Appointment</DialogTitle>
+            <DialogDescription>
+              Upload annotated documents and photo
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Booking Details */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-semibold mb-2">Appointment Details</h3>
+              <p className="text-sm text-gray-600">
+                {handoverBooking && format(handoverBooking.date, "EEEE, MMMM d, yyyy")} at {handoverBooking?.time}
+              </p>
+              <p className="text-sm text-gray-600">{handoverBooking?.customerEmail}</p>
+            </div>
+
+            {loadingTemplates ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">Loading templates...</p>
+              </div>
+            ) : (
+              <>
+                {/* Handover Checklist Upload */}
+                {handoverChecklistTemplate && (
+                  <Collapsible className="border rounded-lg overflow-hidden">
+                    <CollapsibleTrigger className="w-full">
+                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <FileText className="w-5 h-5 text-blue-600" />
+                          <div className="text-left">
+                            <h3 className="font-semibold text-lg">Handover Checklist</h3>
+                            <p className="text-sm text-gray-600">Download template, annotate & upload</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {handoverChecklistPreview && <Check className="w-5 h-5 text-green-600" />}
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        </div>
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-4 bg-white space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <Button
+                            variant="outline"
+                            className="h-24 flex flex-col gap-2 border-dashed border-2 hover:border-blue-500 hover:bg-blue-50"
+                            onClick={() => {
+                              const link = document.createElement("a");
+                              link.href = handoverChecklistTemplate;
+                              link.download = "Handover_Checklist_Template.pdf";
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                          >
+                            <Download className="w-6 h-6 text-blue-600" />
+                            <span className="text-sm font-medium">Download Template</span>
+                          </Button>
+                          
+                          <div>
+                            <input
+                              type="file"
+                              accept="application/pdf"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file && file.type === "application/pdf" && handoverBooking) {
+                                  try {
+                                    await uploadHandoverFile(Number(handoverBooking.id), 'handover_checklist', file, authToken);
+                                    setAnnotatedChecklist(file);
+                                    setHandoverChecklistPreview(URL.createObjectURL(file));
+                                    toast.success("Handover checklist uploaded!");
+                                  } catch (error) {
+                                    console.error("Upload error:", error);
+                                    toast.error("Failed to upload checklist");
+                                  }
+                                }
+                                // Reset input
+                                e.target.value = '';
+                              }}
+                              className="hidden"
+                              id="checklist-upload"
+                            />
+                            <label htmlFor="checklist-upload" className="block">
+                              <Button variant="outline" className="w-full h-24 flex flex-col gap-2 border-dashed border-2 hover:border-green-500 hover:bg-green-50" asChild>
+                                <span>
+                                  {annotatedChecklist ? (
+                                    <>
+                                      <Check className="w-6 h-6 text-green-600" />
+                                      <span className="text-sm font-medium text-green-600">Checklist Uploaded</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload className="w-6 h-6 text-gray-600" />
+                                      <span className="text-sm font-medium">Upload Annotated</span>
+                                    </>
+                                  )}
+                                </span>
+                              </Button>
+                            </label>
+                          </div>
+                        </div>
+                        {annotatedChecklist && (
+                          <div className="text-sm text-green-600 bg-green-50 p-2 rounded flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Check className="w-4 h-4" />
+                              <span>{annotatedChecklist.name}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={async () => {
+                                if (handoverBooking) {
+                                  try {
+                                    await deleteHandoverFile(Number(handoverBooking.id), 'handover_checklist', authToken);
+                                    setAnnotatedChecklist(null);
+                                    setHandoverChecklistPreview(null);
+                                    toast.success("Checklist deleted");
+                                  } catch (error) {
+                                    toast.error("Failed to delete checklist");
+                                  }
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
+                        {handoverChecklistPreview && (
+                          <div className="border rounded-lg overflow-hidden bg-gray-50">
+                            <div className="p-2 bg-gray-100 flex items-center justify-between">
+                              <span className="text-xs font-medium text-gray-700">PDF Preview</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6"
+                                onClick={() => window.open(handoverChecklistPreview, '_blank')}
+                              >
+                                <Eye className="w-3 h-3 mr-1" />
+                                Open Full
+                              </Button>
+                            </div>
+                            <iframe 
+                              src={handoverChecklistPreview} 
+                              className="w-full h-64 border-0"
+                              title="Handover Checklist Preview"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+
+                {/* Declaration Upload */}
+                {declarationTemplate && (
+                  <Collapsible className="border rounded-lg overflow-hidden">
+                    <CollapsibleTrigger className="w-full">
+                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <FileText className="w-5 h-5 text-purple-600" />
+                          <div className="text-left">
+                            <h3 className="font-semibold text-lg">Declaration V3</h3>
+                            <p className="text-sm text-gray-600">Download template, annotate & upload</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {handoverDeclarationPreview && <Check className="w-5 h-5 text-green-600" />}
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        </div>
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-4 bg-white space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <Button
+                            variant="outline"
+                            className="h-24 flex flex-col gap-2 border-dashed border-2 hover:border-purple-500 hover:bg-purple-50"
+                            onClick={() => {
+                              const link = document.createElement("a");
+                              link.href = declarationTemplate;
+                              link.download = "Declaration_Template.pdf";
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                          >
+                            <Download className="w-6 h-6 text-purple-600" />
+                            <span className="text-sm font-medium">Download Template</span>
+                          </Button>
+                          
+                          <div>
+                            <input
+                              type="file"
+                              accept="application/pdf"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file && file.type === "application/pdf" && handoverBooking) {
+                                  try {
+                                    await uploadHandoverFile(Number(handoverBooking.id), 'handover_declaration', file, authToken);
+                                    setAnnotatedDeclaration(file);
+                                    setHandoverDeclarationPreview(URL.createObjectURL(file));
+                                    toast.success("Declaration uploaded!");
+                                  } catch (error) {
+                                    console.error("Upload error:", error);
+                                    toast.error("Failed to upload declaration");
+                                  }
+                                }
+                                e.target.value = '';
+                              }}
+                              className="hidden"
+                              id="declaration-upload"
+                            />
+                            <label htmlFor="declaration-upload" className="block">
+                              <Button variant="outline" className="w-full h-24 flex flex-col gap-2 border-dashed border-2 hover:border-green-500 hover:bg-green-50" asChild>
+                                <span>
+                                  {annotatedDeclaration ? (
+                                    <>
+                                      <Check className="w-6 h-6 text-green-600" />
+                                      <span className="text-sm font-medium text-green-600">Declaration Uploaded</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload className="w-6 h-6 text-gray-600" />
+                                      <span className="text-sm font-medium">Upload Annotated</span>
+                                    </>
+                                  )}
+                                </span>
+                              </Button>
+                            </label>
+                          </div>
+                        </div>
+                        {annotatedDeclaration && (
+                          <div className="text-sm text-green-600 bg-green-50 p-2 rounded flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Check className="w-4 h-4" />
+                              <span>{annotatedDeclaration.name}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={async () => {
+                                if (handoverBooking) {
+                                  try {
+                                    await deleteHandoverFile(Number(handoverBooking.id), 'handover_declaration', authToken);
+                                    setAnnotatedDeclaration(null);
+                                    setHandoverDeclarationPreview(null);
+                                    toast.success("Declaration deleted");
+                                  } catch (error) {
+                                    toast.error("Failed to delete declaration");
+                                  }
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
+                        {handoverDeclarationPreview && (
+                          <div className="border rounded-lg overflow-hidden bg-gray-50">
+                            <div className="p-2 bg-gray-100 flex items-center justify-between">
+                              <span className="text-xs font-medium text-gray-700">PDF Preview</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6"
+                                onClick={() => window.open(handoverDeclarationPreview, '_blank')}
+                              >
+                                <Eye className="w-3 h-3 mr-1" />
+                                Open Full
+                              </Button>
+                            </div>
+                            <iframe 
+                              src={handoverDeclarationPreview} 
+                              className="w-full h-64 border-0"
+                              title="Declaration Preview"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+              </>
+            )}
+
+            {/* Photo Upload */}
+            <Collapsible className="border rounded-lg overflow-hidden">
+              <CollapsibleTrigger className="w-full">
+                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <ImageIcon className="w-5 h-5 text-green-600" />
+                    <div className="text-left">
+                      <h3 className="font-semibold text-lg">Handover Photo</h3>
+                      <p className="text-sm text-gray-600">Client with unit keys</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {handoverPhotoPreview && <Check className="w-5 h-5 text-green-600" />}
+                    <ChevronDown className="w-5 h-5 text-gray-400" />
+                  </div>
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="p-4 bg-white space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Camera Option */}
+                    <Button
+                      variant="outline"
+                      onClick={startCamera}
+                      className="h-24 flex flex-col gap-2 border-dashed border-2 hover:border-green-500 hover:bg-green-50"
+                    >
+                      <CalendarCheck className="w-6 h-6 text-green-600" />
+                      <span className="text-sm font-medium">{handoverPhotoPreview ? "✓ Photo Taken" : "Take Photo"}</span>
+                    </Button>
+
+                    {/* Upload Option */}
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file && handoverBooking) {
+                            try {
+                              await uploadHandoverFile(Number(handoverBooking.id), 'handover_photo', file, authToken);
+                              setHandoverPhoto(file);
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setHandoverPhotoPreview(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                              toast.success("Photo uploaded!");
+                            } catch (error) {
+                              console.error("Upload error:", error);
+                              toast.error("Failed to upload photo");
+                            }
+                          }
+                          e.target.value = '';
+                        }}
+                        className="hidden"
+                        id="handover-photo-upload"
+                      />
+                      <label htmlFor="handover-photo-upload" className="block">
+                        <Button variant="outline" asChild className="w-full h-24 flex flex-col gap-2 border-dashed border-2 hover:border-green-500 hover:bg-green-50">
+                          <span>
+                            {handoverPhoto ? (
+                              <>
+                                <Check className="w-6 h-6 text-green-600" />
+                                <span className="text-sm font-medium text-green-600">Photo Uploaded</span>
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="w-6 h-6 text-gray-600" />
+                                <span className="text-sm font-medium">Upload Photo</span>
+                              </>
+                            )}
+                          </span>
+                        </Button>
+                      </label>
+                    </div>
+                  </div>
+                  {handoverPhotoPreview && (
+                    <>
+                      <div className="text-sm text-green-600 bg-green-50 p-2 rounded flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Check className="w-4 h-4" />
+                          <span>Photo captured successfully</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={async () => {
+                            if (handoverBooking) {
+                              try {
+                                await deleteHandoverFile(Number(handoverBooking.id), 'handover_photo', authToken);
+                                setHandoverPhoto(null);
+                                setHandoverPhotoPreview(null);
+                                toast.success("Photo deleted");
+                              } catch (error) {
+                                toast.error("Failed to delete photo");
+                              }
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="border rounded-lg overflow-hidden">
+                        <img 
+                          src={handoverPhotoPreview} 
+                          alt="Handover photo preview" 
+                          className="w-full h-auto max-h-64 object-contain bg-gray-50"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Client Signature */}
+            <Collapsible className="border rounded-lg overflow-hidden">
+              <CollapsibleTrigger className="w-full">
+                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-amber-600" />
+                    <div className="text-left">
+                      <h3 className="font-semibold text-lg">Client Signature</h3>
+                      <p className="text-sm text-gray-600">Final acknowledgment signature</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {clientSignaturePreview && <Check className="w-5 h-5 text-green-600" />}
+                    <ChevronDown className="w-5 h-5 text-gray-400" />
+                  </div>
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="p-4 bg-white space-y-3">
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <canvas
+                      ref={signatureCanvasRef}
+                      width={600}
+                      height={200}
+                      className="w-full border border-gray-300 rounded bg-white cursor-crosshair"
+                      onMouseDown={(e) => {
+                        setIsDrawingSignature(true);
+                        const canvas = signatureCanvasRef.current;
+                        if (!canvas) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        const rect = canvas.getBoundingClientRect();
+                        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+                        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+                        ctx.beginPath();
+                        ctx.moveTo(x, y);
+                      }}
+                      onMouseMove={(e) => {
+                        if (!isDrawingSignature) return;
+                        const canvas = signatureCanvasRef.current;
+                        if (!canvas) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        const rect = canvas.getBoundingClientRect();
+                        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+                        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+                        ctx.lineTo(x, y);
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 2;
+                        ctx.lineCap = 'round';
+                        ctx.stroke();
+                      }}
+                      onMouseUp={() => setIsDrawingSignature(false)}
+                      onMouseLeave={() => setIsDrawingSignature(false)}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        setIsDrawingSignature(true);
+                        const canvas = signatureCanvasRef.current;
+                        if (!canvas) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        const rect = canvas.getBoundingClientRect();
+                        const touch = e.touches[0];
+                        const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+                        const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+                        ctx.beginPath();
+                        ctx.moveTo(x, y);
+                      }}
+                      onTouchMove={(e) => {
+                        e.preventDefault();
+                        if (!isDrawingSignature) return;
+                        const canvas = signatureCanvasRef.current;
+                        if (!canvas) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        const rect = canvas.getBoundingClientRect();
+                        const touch = e.touches[0];
+                        const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+                        const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+                        ctx.lineTo(x, y);
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 2;
+                        ctx.lineCap = 'round';
+                        ctx.stroke();
+                      }}
+                      onTouchEnd={() => setIsDrawingSignature(false)}
+                    />
+                    <p className="text-xs text-gray-500 mt-2 text-center">Sign above with mouse or touch</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const canvas = signatureCanvasRef.current;
+                        if (!canvas) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        setClientSignature(null);
+                        setClientSignaturePreview(null);
+                        toast.success('Signature cleared');
+                      }}
+                    >
+                      Clear Signature
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={async () => {
+                        const canvas = signatureCanvasRef.current;
+                        if (!canvas || !handoverBooking) return;
+                        canvas.toBlob(async (blob) => {
+                          if (blob) {
+                            const file = new File([blob], 'signature.png', { type: 'image/png' });
+                            try {
+                              await uploadHandoverFile(Number(handoverBooking.id), 'client_signature', file, authToken);
+                              setClientSignature(file);
+                              setClientSignaturePreview(canvas.toDataURL('image/png'));
+                              toast.success('Signature saved!');
+                            } catch (error) {
+                              console.error("Upload error:", error);
+                              toast.error("Failed to save signature");
+                            }
+                          }
+                        });
+                      }}
+                    >
+                      Save Signature
+                    </Button>
+                  </div>
+                  {clientSignaturePreview && (
+                    <>
+                      <div className="text-sm text-green-600 bg-green-50 p-2 rounded flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Check className="w-4 h-4" />
+                          <span>Signature saved successfully</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={async () => {
+                            if (handoverBooking) {
+                              try {
+                                await deleteHandoverFile(Number(handoverBooking.id), 'client_signature', authToken);
+                                setClientSignature(null);
+                                setClientSignaturePreview(null);
+                                // Clear canvas
+                                const canvas = signatureCanvasRef.current;
+                                if (canvas) {
+                                  const ctx = canvas.getContext('2d');
+                                  if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                }
+                                toast.success("Signature deleted");
+                              } catch (error) {
+                                toast.error("Failed to delete signature");
+                              }
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="border rounded-lg overflow-hidden bg-white p-4">
+                        <img 
+                          src={clientSignaturePreview} 
+                          alt="Client signature preview" 
+                          className="w-full h-auto max-h-32 object-contain"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Validation Warning */}
+            {(!handoverChecklistPreview || !handoverDeclarationPreview || !handoverPhotoPreview || !clientSignaturePreview) && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ Please upload both annotated PDF documents, capture a photo, and obtain client signature before completing
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setHandoverDialogOpen(false)}
+              disabled={completingHandover}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={async () => {
+                if (!handoverChecklistPreview) {
+                  toast.error("Please upload the handover checklist");
+                  return;
+                }
+                
+                if (!handoverDeclarationPreview) {
+                  toast.error("Please upload the declaration");
+                  return;
+                }
+                
+                if (!handoverPhotoPreview) {
+                  toast.error("Please upload a handover photo");
+                  return;
+                }
+                
+                if (!clientSignaturePreview) {
+                  toast.error("Please obtain and save the client signature");
+                  return;
+                }
+                
+                setCompletingHandover(true);
+                try {
+                  if (handoverBooking) {
+                    // Files already uploaded, just mark as complete
+                    await completeHandover(Number(handoverBooking.id), authToken);
+                    toast.success("Handover completed successfully!");
+                    setHandoverDialogOpen(false);
+                    setAnnotatedChecklist(null);
+                    setAnnotatedDeclaration(null);
+                    setHandoverPhoto(null);
+                    setHandoverChecklistPreview(null);
+                    setHandoverDeclarationPreview(null);
+                    setHandoverPhotoPreview(null);
+                    setClientSignature(null);
+                    setClientSignaturePreview(null);
+                    // Clear signature canvas
+                    const canvas = signatureCanvasRef.current;
+                    if (canvas) {
+                      const ctx = canvas.getContext('2d');
+                      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    }
+                    // Refresh bookings
+                    onFilterBookings({});
+                  }
+                } catch (error) {
+                  console.error("Failed to complete handover:", error);
+                  toast.error("Failed to complete handover");
+                } finally {
+                  setCompletingHandover(false);
+                }
+              }}
+              disabled={completingHandover || !handoverChecklistPreview || !handoverDeclarationPreview || !handoverPhotoPreview || !clientSignaturePreview}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {completingHandover ? "Completing..." : "Complete Handover"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Camera Capture Dialog */}
+      <Dialog open={showCamera} onOpenChange={(open) => {
+        if (!open) {
+          stopCamera();
+        }
+      }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Take Handover Photo</DialogTitle>
+            <DialogDescription>
+              Position the client with the unit keys in the frame
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '500px' }}>
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline
+                muted
+                style={{ width: '100%', height: '100%', display: 'block' }}
+              />
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={stopCamera}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={capturePhoto}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <CalendarCheck className="w-5 h-5 mr-2" />
+              Capture Photo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Booking Status Dialog */}
+      <Dialog open={!!editingBooking} onOpenChange={(open) => !open && setEditingBooking(null)}>
+        <DialogContent className="border border-gray-200">
+          <DialogHeader>
+            <DialogTitle>Update Booking Status</DialogTitle>
+            <DialogDescription>
+              {newBookingStatus === "completed" 
+                ? "Mark this booking as completed" 
+                : "Cancel this booking - the customer will be able to rebook"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Booking Details</Label>
+              <p className="text-sm text-gray-600">
+                {editingBooking && format(editingBooking.date, "EEEE, MMMM d, yyyy")} at {editingBooking?.time}
+              </p>
+              <p className="text-sm text-gray-600">{editingBooking?.customerEmail}</p>
+            </div>
+            {newBookingStatus === "cancelled" && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ This will remove the booking and allow the customer to book a new appointment.
+                </p>
+              </div>
+            )}
+            {newBookingStatus === "completed" && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-sm text-green-800">
+                  ✓ This booking will be marked as completed.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setEditingBooking(null)}
+              disabled={cancellingBooking}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateBookingStatus}
+              disabled={cancellingBooking}
+              className={newBookingStatus === "completed" 
+                ? "bg-green-600 hover:bg-green-700 text-white" 
+                : "bg-red-600 hover:bg-red-700 text-white"}
+            >
+              {cancellingBooking ? "Cancelling..." : (newBookingStatus === "completed" ? "Mark as Completed" : "Cancel Booking")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Project Selection Dialog for Send All */}
+      <Dialog open={projectSelectOpen} onOpenChange={setProjectSelectOpen}>
+        <DialogContent className="border border-gray-200">
+          <DialogHeader>
+            <DialogTitle>Select Project</DialogTitle>
+            <DialogDescription>
+              Choose which project's users should receive the SOA email
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Project Filter</Label>
+              <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Projects ({users.length} users)</SelectItem>
+                  {userProjects.map((project) => {
+                    const projectUsers = users.filter(u => 
+                      u.units?.some(unit => unit.property.project_name === project)
+                    );
+                    const usersWithSOA = projectUsers.filter(u => 
+                      u.attachments?.some(att => att.type === "soa")
+                    );
+                    return (
+                      <SelectItem key={project} value={project}>
+                        {project} ({usersWithSOA.length}/{projectUsers.length} SOA uploaded)
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* SOA Upload Status */}
+            {(() => {
+              let filteredUsers = users;
+              if (selectedProject !== "all") {
+                filteredUsers = users.filter(u => 
+                  u.units?.some(unit => unit.property.project_name === selectedProject)
+                );
+              }
+              const usersWithSOA = filteredUsers.filter(u => 
+                u.attachments?.some(att => att.type === "soa")
+              );
+              const usersWithoutSOA = filteredUsers.filter(u => 
+                !u.attachments?.some(att => att.type === "soa")
+              );
+              const percentage = filteredUsers.length > 0 
+                ? Math.round((usersWithSOA.length / filteredUsers.length) * 100) 
+                : 0;
+
+              return (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">SOA Upload Progress</span>
+                      <span className="text-gray-600">{usersWithSOA.length}/{filteredUsers.length} ({percentage}%)</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div 
+                        className={`h-2.5 rounded-full transition-all ${
+                          percentage === 100 ? 'bg-green-600' : 'bg-blue-600'
+                        }`}
+                        style={{ width: `${percentage}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {usersWithoutSOA.length > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <p className="text-sm font-medium text-yellow-800 mb-2">
+                        ⚠️ {usersWithoutSOA.length} user(s) missing SOA:
+                      </p>
+                      <div className="max-h-32 overflow-y-auto space-y-1">
+                        {usersWithoutSOA.map(u => (
+                          <p key={u.id} className="text-xs text-yellow-700">
+                            • {u.full_name} ({u.email})
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {percentage === 100 && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-sm text-green-800">
+                        ✓ All users have SOA uploaded. Ready to send!
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-800">
+                ℹ️ All users must have SOA uploaded before sending emails.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProjectSelectOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleProjectSelected} 
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={(() => {
+                let filteredUsers = users;
+                if (selectedProject !== "all") {
+                  filteredUsers = users.filter(u => 
+                    u.units?.some(unit => unit.property.project_name === selectedProject)
+                  );
+                }
+                const usersWithoutSOA = filteredUsers.filter(u => 
+                  !u.attachments?.some(att => att.type === "soa")
+                );
+                return usersWithoutSOA.length > 0;
+              })()}
+            >
+              Continue to Compose Email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Missing SOA Dialog */}
+      <Dialog open={missingSOADialogOpen} onOpenChange={setMissingSOADialogOpen}>
+        <DialogContent className="border border-gray-200 max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Missing Statement of Account</DialogTitle>
+            <DialogDescription>
+              The following users do not have SOA uploaded. Please upload SOA for all users before sending emails.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-yellow-800 mb-2">
+                    {usersWithoutSOA.length} User{usersWithoutSOA.length !== 1 ? 's' : ''} Without SOA
+                  </h4>
+                  <div className="space-y-1 max-h-60 overflow-y-auto">
+                    {usersWithoutSOA.map((user) => (
+                      <div key={user.id} className="text-sm text-yellow-700 bg-white rounded px-3 py-2 border border-yellow-200">
+                        <div className="font-medium">{user.full_name}</div>
+                        <div className="text-xs text-yellow-600">{user.email}</div>
+                        {user.units && user.units.length > 0 && (
+                          <div className="text-xs text-yellow-600">
+                            Unit: {user.units[0].unit} - {user.units[0].property.project_name}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMissingSOADialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Email Dialog */}
+      <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
+        <DialogContent className="border border-gray-200 max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Send Email with SOA</DialogTitle>
+            <DialogDescription>
+              Compose and send Statement of Account to {emailRecipients.length} recipient(s)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Recipients Section */}
+            <div className="space-y-2">
+              <Label>Recipients ({emailRecipients.length})</Label>
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-gray-50">
+                {emailRecipients.length === 0 ? (
+                  <p className="text-sm text-gray-500">No recipients selected. Check users from the table above.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {emailRecipients.map((user) => (
+                      <div key={user.id} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{user.full_name}</p>
+                          <p className="text-xs text-gray-500">{user.email}</p>
+                          <p className="text-xs text-gray-400">
+                            {user.units?.map(u => `${u.unit} (${u.property.project_name})`).join(', ') || 'No units'}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => toggleRecipient(user)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Email Template Preview */}
+            <div className="space-y-2">
+              <Label>Email Subject</Label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-md">
+                <p className="text-sm font-medium">Handover Notice</p>
+              </div>
+            </div>
+
+            {/* Email Body Preview */}
+            <div className="space-y-2">
+              <Label>Email Template</Label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-md space-y-2">
+                <p className="text-sm">Dear <span className="text-blue-600 font-medium">[Customer Name]</span>,</p>
+                <p className="text-sm">This email uses the Handover Notice template with dynamic values:</p>
+                <ul className="text-sm space-y-1 ml-4 list-disc">
+                  <li><span className="text-blue-600 font-medium">[Customer Name]</span> - Recipient's first name</li>
+                  <li><span className="text-blue-600 font-medium">[Unit Number]</span> - Unit details</li>
+                  <li><span className="text-blue-600 font-medium">[Project Name]</span> - Property project</li>
+                  <li><span className="text-blue-600 font-medium">[SOA Attachment]</span> - Statement of Account PDF</li>
+                </ul>
+                <p className="text-xs text-gray-500 mt-2">
+                  ℹ️ Template content is managed in the backend and will be automatically populated for each recipient.
+                </p>
+              </div>
+            </div>
+
+            {/* Email Preview */}
+            {emailRecipients.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-base font-semibold">Email Content Preview</Label>
+                <div className="bg-white rounded-lg border-2 border-gray-300 overflow-hidden">
+                  {/* Email Header */}
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                    <div className="text-sm text-gray-700 mb-1">
+                      <span className="font-medium">To:</span> {emailRecipients[0].email}
+                    </div>
+                    <div className="text-sm text-gray-700">
+                      <span className="font-medium">Subject:</span> Handover Notice
+                    </div>
+                  </div>
+                  
+                  {/* Email Body */}
+                  <div className="p-6 max-h-[400px] overflow-y-auto">
+                    <div className="space-y-4 text-sm">
+                      <p>Dear {emailRecipients[0].full_name.split(' ')[0]},</p>
+                      
+                      <p>We are pleased to inform you that your unit at Viera Residences is now ready for final handover following the issuance of the Building Completion Certificate by the Dubai Development Authority.</p>
+                      
+                      <p>This letter serves as the <strong>official Handover Notice</strong>. Kindly review and complete the steps outlined below to proceed with the handover process.</p>
+                      
+                      <Separator className="my-4" />
+                      
+                      <div>
+                        <h3 className="font-bold text-base mb-2">1. Final Payment</h3>
+                        <p>Kindly arrange settlement of the final amount due in accordance with the Sale and Purchase Agreement within <strong>30 calendar days</strong> from the date of this notice.</p>
+                        <p className="mt-2"><strong>Find your Statement of Account attached to this email.</strong></p>
+                      </div>
+                      
+                      <div>
+                        <h3 className="font-bold text-base mb-2">2. Utilities Connections, Registrations & Service Charge</h3>
+                        <p>To proceed with the handover, please complete the <strong>DEWA</strong> and <strong>Chilled Water / AC (Zenner)</strong> registrations.</p>
+                      </div>
+                      
+                      <div>
+                        <h3 className="font-bold text-base mb-2">3. Handover Appointment</h3>
+                        <p>Once your payments have been settled and all utility registrations have been completed, our team will contact you to arrange the unit inspection and key handover.</p>
+                      </div>
+                      
+                      <Separator className="my-4" />
+                      
+                      <p>For any queries, please contact us at <strong>vantage@zedcapital.ae</strong>.</p>
+                      
+                      <p>We look forward to welcoming you to your new home at <strong>Viera Residences</strong>.</p>
+                      
+                      <p className="mt-4">
+                        Warm regards,<br/>
+                        <strong>Vantage Ventures Real Estate Development L.L.C.</strong>
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Attachments */}
+                  <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
+                    <Label className="text-sm font-semibold flex items-center gap-2">
+                      <Paperclip className="w-4 h-4" />
+                      Attachments
+                    </Label>
+                    <div className="mt-2">
+                      {emailRecipients[0].attachments?.some(att => att.type === "soa") ? (
+                        <div className="space-y-2">
+                          {emailRecipients[0].attachments
+                            .filter(att => att.type === "soa")
+                            .map((attachment) => (
+                              <div key={attachment.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-300">
+                                <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium">{attachment.filename}</p>
+                                  <p className="text-xs text-gray-500">
+                                    Uploaded {format(new Date(attachment.created_at), "MMM d, yyyy")}
+                                  </p>
+                                </div>
+                                <Badge variant="outline" className="text-xs">PDF</Badge>
+                              </div>
+                            ))}
+                          <div className="p-2 bg-green-50 border border-green-200 rounded">
+                            <p className="text-xs text-green-800">
+                              ✓ SOA document will be attached to this email
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded">
+                          <p className="text-sm text-red-800 font-medium">
+                            ⚠️ No SOA uploaded for this user
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Info Banners */}
+            {emailRecipients.length > 200 && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-sm text-red-800 font-medium">
+                  ⚠️ Maximum 200 recipients per batch! You have {emailRecipients.length} selected.
+                </p>
+                <p className="text-xs text-red-700 mt-1">
+                  Please reduce the number of recipients or contact support to enable queue-based bulk sending.
+                </p>
+              </div>
+            )}
+            
+            {emailRecipients.length > 100 && emailRecipients.length <= 200 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                <p className="text-sm text-orange-800">
+                  📊 Large batch ({emailRecipients.length} recipients). This may take a few minutes to process.
+                </p>
+              </div>
+            )}
+            
+            {emailRecipients.length > 0 && emailRecipients.length <= 100 && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-sm text-green-800">
+                  ✅ Ready to send to {emailRecipients.length} recipient(s). Each email will be personalized and logged.
+                </p>
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+              <p className="text-sm text-blue-800 font-medium">
+                📧 Email System Features:
+              </p>
+              <ul className="text-xs text-blue-700 space-y-1 ml-4 list-disc">
+                <li>Each email is personalized with recipient's name, unit, and project</li>
+                <li>All sent emails are logged to database with timestamps</li>
+                <li>System can handle up to 200 recipients per batch</li>
+                <li>Failed emails are tracked separately for retry</li>
+                <li>SOA attachments will be automatically included (requires SMTP setup)</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSendEmailSubmit}
+              disabled={sendingEmail || emailRecipients.length === 0 || emailRecipients.length > 200 || !emailSubject.trim()}
+              className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {sendingEmail ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Send Email
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Client Dialog */}
+      <Dialog open={addClientDialogOpen} onOpenChange={setAddClientDialogOpen}>
+        <DialogContent className="border border-gray-200">
+          <DialogHeader>
+            <DialogTitle>Add New Client</DialogTitle>
+            <DialogDescription>
+              Create a new client and assign them to a unit
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="project">Project *</Label>
+              <Select value={selectedProjectForClient} onValueChange={setSelectedProjectForClient}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userProjects.map((project) => (
+                    <SelectItem key={project} value={project}>
+                      {project}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="full_name">Full Name *</Label>
+              <Input
+                id="full_name"
+                value={newClientData.full_name}
+                onChange={(e) => setNewClientData({...newClientData, full_name: e.target.value})}
+                placeholder="John Doe"
+              />
+            </div>
+            <div>
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={newClientData.email}
+                onChange={(e) => setNewClientData({...newClientData, email: e.target.value})}
+                placeholder="john@example.com"
+              />
+            </div>
+            <div>
+              <Label htmlFor="unit_select">Unit *</Label>
+              <Select 
+                value={selectedUnitId} 
+                onValueChange={setSelectedUnitId}
+                disabled={!selectedProjectForClient || loadingUnits}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={
+                    loadingUnits ? "Loading units..." :
+                    !selectedProjectForClient ? "Select project first" : 
+                    "Select an available unit"
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  {loadingUnits ? (
+                    <SelectItem value="loading" disabled>
+                      Loading units...
+                    </SelectItem>
+                  ) : allUnits.length === 0 ? (
+                    <SelectItem value="none" disabled>
+                      No available units in this project
+                    </SelectItem>
+                  ) : (
+                    allUnits.map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id.toString()}>
+                        {unit.unit}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">Only showing unoccupied units</p>
+            </div>
+            <div>
+              <Label htmlFor="mobile">Mobile Number (Optional)</Label>
+              <Input
+                id="mobile"
+                value={newClientData.mobile_number}
+                onChange={(e) => setNewClientData({...newClientData, mobile_number: e.target.value})}
+                placeholder="+971 50 123 4567"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_primary"
+                checked={newClientData.is_primary}
+                onChange={(e) => setNewClientData({...newClientData, is_primary: e.target.checked})}
+                className="w-4 h-4"
+              />
+              <Label htmlFor="is_primary">Primary Owner</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setAddClientDialogOpen(false);
+              setSelectedProjectForClient("");
+              setSelectedUnitId("");
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={async () => {
+                try {
+                  if (!selectedUnitId || !selectedProjectForClient) {
+                    toast.error("Please select a project and unit");
+                    return;
+                  }
+
+                  const response = await createUserWithUnit({
+                    unit_id: parseInt(selectedUnitId),
+                    full_name: newClientData.full_name,
+                    email: newClientData.email,
+                    mobile_number: newClientData.mobile_number || undefined,
+                    is_primary: newClientData.is_primary
+                  }, authToken);
+
+                  if (response.success) {
+                    toast.success(`Client added successfully! Password: ${response.password}`);
+                    setAddClientDialogOpen(false);
+                    setSelectedProjectForClient("");
+                    setSelectedUnitId("");
+                    setNewClientData({
+                      full_name: "",
+                      email: "",
+                      unit_number: "",
+                      mobile_number: "",
+                      is_primary: true,
+                    });
+                    // Refresh units data
+                    fetchAllUnitsForListing();
+                  } else {
+                    toast.error(response.message || "Failed to add client");
+                  }
+                } catch (error: any) {
+                  console.error("Failed to add client:", error);
+                  toast.error(error.message || "Failed to add client");
+                }
+              }}
+              disabled={!newClientData.full_name || !newClientData.email || !selectedUnitId || !selectedProjectForClient}
+            >
+              Add Client
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Upload Dialog */}
+      <Dialog open={bulkUploadDialogOpen} onOpenChange={setBulkUploadDialogOpen}>
+        <DialogContent className="border border-gray-200">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Clients</DialogTitle>
+            <DialogDescription>
+              Upload a CSV or Excel file with client data
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="bulk_project">Project *</Label>
+              <Select value={selectedProjectForBulk} onValueChange={setSelectedProjectForBulk}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project for all units in this file" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userProjects.map((project) => (
+                    <SelectItem key={project} value={project}>
+                      {project}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">All units in the uploaded file will be assigned to this project</p>
+            </div>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                className="hidden"
+                id="bulk-upload"
+              />
+              <label htmlFor="bulk-upload" className="cursor-pointer">
+                <div className="text-sm text-gray-600">
+                  {uploadFile ? (
+                    <span className="text-black font-medium">{uploadFile.name}</span>
+                  ) : (
+                    <>Click to upload or drag and drop</>
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">CSV or Excel file</div>
+              </label>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-800 font-medium mb-2">Expected Format:</p>
+              <ul className="text-xs text-blue-700 space-y-1">
+                <li>• Full Name (required)</li>
+                <li>• Email (required)</li>
+                <li>• Mobile Number (optional)</li>
+                <li>• Unit Number (required)</li>
+              </ul>
+              <p className="text-xs text-blue-700 mt-2">
+                <strong>Note:</strong> The first person listed for each unit will automatically be set as the primary buyer.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setBulkUploadDialogOpen(false);
+              setUploadFile(null);
+              setSelectedProjectForBulk("");
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={async () => {
+                try {
+                  if (!uploadFile || !selectedProjectForBulk) {
+                    toast.error("Please select a project and file");
+                    return;
+                  }
+
+                  const propertyId = getPropertyIdByName(selectedProjectForBulk);
+                  if (!propertyId) {
+                    toast.error("Failed to find property ID");
+                    return;
+                  }
+
+                  const response = await bulkUploadUsers({
+                    property_id: propertyId,
+                    file: uploadFile
+                  }, authToken);
+
+                  if (response.success) {
+                    toast.success(response.message || "File uploaded successfully");
+                    if (response.results && response.results.errors.length > 0) {
+                      console.log("Upload errors:", response.results.errors);
+                      toast.info(`${response.results.errors.length} rows had errors. Check console for details.`);
+                    }
+                    setBulkUploadDialogOpen(false);
+                    setUploadFile(null);
+                    setSelectedProjectForBulk("");
+                    // Refresh units data
+                    fetchAllUnitsForListing();
+                  } else {
+                    toast.error(response.message || "Failed to upload file");
+                  }
+                } catch (error: any) {
+                  console.error("Failed to bulk upload clients:", error);
+                  toast.error(error.message || "Failed to upload file");
+                }
+              }}
+              disabled={!uploadFile || !selectedProjectForBulk}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Upload
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Unit Dialog */}
+      <Dialog open={addUnitDialogOpen} onOpenChange={setAddUnitDialogOpen}>
+        <DialogContent className="border border-gray-200">
+          <DialogHeader>
+            <DialogTitle>Add New Unit</DialogTitle>
+            <DialogDescription>
+              Add a single unit to the system
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="unit_project">Project *</Label>
+              <Select value={selectedProjectForNewUnit} onValueChange={setSelectedProjectForNewUnit}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userProjects.map((project) => (
+                    <SelectItem key={project} value={project}>
+                      {project}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="unit_number">Unit Number *</Label>
+              <Input
+                id="unit_number"
+                value={newUnitData.unit_number}
+                onChange={(e) => setNewUnitData({...newUnitData, unit_number: e.target.value})}
+                placeholder="A-101"
+              />
+            </div>
+            <div>
+              <Label htmlFor="floor">Floor (Optional)</Label>
+              <Input
+                id="floor"
+                value={newUnitData.floor}
+                onChange={(e) => setNewUnitData({...newUnitData, floor: e.target.value})}
+                placeholder="10"
+              />
+            </div>
+            <div>
+              <Label htmlFor="building">Building/Block (Optional)</Label>
+              <Input
+                id="building"
+                value={newUnitData.building}
+                onChange={(e) => setNewUnitData({...newUnitData, building: e.target.value})}
+                placeholder="Tower A"
+              />
+            </div>
+            <div>
+              <Label htmlFor="square_footage">Square Footage (Optional)</Label>
+              <Input
+                id="square_footage"
+                value={newUnitData.square_footage}
+                onChange={(e) => setNewUnitData({...newUnitData, square_footage: e.target.value})}
+                placeholder="1200"
+                type="number"
+              />
+            </div>
+            <div>
+              <Label htmlFor="dewa_premise_number">DEWA Premise Number *</Label>
+              <Input
+                id="dewa_premise_number"
+                value={newUnitData.dewa_premise_number}
+                onChange={(e) => setNewUnitData({...newUnitData, dewa_premise_number: e.target.value})}
+                placeholder="685151093"
+              />
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-700">
+                This unit will be added as available (unoccupied). You can assign owners later from the Unit Management tab.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setAddUnitDialogOpen(false);
+              setSelectedProjectForNewUnit("");
+              setNewUnitData({
+                unit_number: "",
+                floor: "",
+                building: "",
+                square_footage: "",
+                dewa_premise_number: "",
+              });
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={async () => {
+                try {
+                  if (!newUnitData.unit_number || !selectedProjectForNewUnit) {
+                    toast.error("Please fill in required fields");
+                    return;
+                  }
+
+                  const propertyId = getPropertyIdByName(selectedProjectForNewUnit);
+                  if (!propertyId) {
+                    toast.error("Failed to find property ID");
+                    return;
+                  }
+
+                  const response = await createUnit({
+                    property_id: propertyId,
+                    unit: newUnitData.unit_number,
+                    floor: newUnitData.floor || undefined,
+                    building: newUnitData.building || undefined,
+                    square_footage: newUnitData.square_footage ? parseFloat(newUnitData.square_footage) : undefined,
+                    dewa_premise_number: newUnitData.dewa_premise_number || undefined
+                  }, authToken);
+
+                  if (response.success) {
+                    toast.success("Unit added successfully");
+                    setAddUnitDialogOpen(false);
+                    setSelectedProjectForNewUnit("");
+                    setNewUnitData({
+                      unit_number: "",
+                      floor: "",
+                      building: "",
+                      square_footage: "",
+                      dewa_premise_number: "",
+                    });
+                    // Refresh units data
+                    fetchAllUnitsForListing();
+                  } else {
+                    toast.error(response.message || "Failed to add unit");
+                  }
+                } catch (error: any) {
+                  console.error("Failed to add unit:", error);
+                  toast.error(error.message || "Failed to add unit");
+                }
+              }}
+              disabled={!newUnitData.unit_number || !selectedProjectForNewUnit}
+            >
+              <Building2 className="w-4 h-4 mr-2" />
+              Add Unit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Units Dialog */}
+      <Dialog open={uploadUnitsDialogOpen} onOpenChange={setUploadUnitsDialogOpen}>
+        <DialogContent className="border border-gray-200">
+          <DialogHeader>
+            <DialogTitle>Upload Units</DialogTitle>
+            <DialogDescription>
+              Upload a CSV or Excel file with unit data (without owners)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="units_project">Project *</Label>
+              <Select value={selectedProjectForUnits} onValueChange={setSelectedProjectForUnits}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project for all units in this file" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userProjects.map((project) => (
+                    <SelectItem key={project} value={project}>
+                      {project}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">All units in the uploaded file will be assigned to this project</p>
+            </div>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={(e) => setUploadUnitsFile(e.target.files?.[0] || null)}
+                className="hidden"
+                id="units-upload"
+              />
+              <label htmlFor="units-upload" className="cursor-pointer">
+                <div className="text-sm text-gray-600">
+                  {uploadUnitsFile ? (
+                    <span className="text-black font-medium">{uploadUnitsFile.name}</span>
+                  ) : (
+                    <>Click to upload or drag and drop</>
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">CSV or Excel file</div>
+              </label>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-800 font-medium mb-2">Expected Format:</p>
+              <ul className="text-xs text-blue-700 space-y-1">
+                <li>• Unit Number (required)</li>
+                <li>• Floor (optional)</li>
+                <li>• Building/Block (optional)</li>
+                <li>• Square Footage (optional)</li>
+                <li>• DEWA Premise Number (optional)</li>
+              </ul>
+              <p className="text-xs text-blue-700 mt-2">
+                These units will be added to the system as available (unoccupied) units.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setUploadUnitsDialogOpen(false);
+              setUploadUnitsFile(null);
+              setSelectedProjectForUnits("");
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={async () => {
+                try {
+                  if (!uploadUnitsFile || !selectedProjectForUnits) {
+                    toast.error("Please select a project and file");
+                    return;
+                  }
+
+                  const propertyId = getPropertyIdByName(selectedProjectForUnits);
+                  if (!propertyId) {
+                    toast.error("Failed to find property ID");
+                    return;
+                  }
+
+                  const response = await bulkUploadUnits({
+                    property_id: propertyId,
+                    file: uploadUnitsFile
+                  }, authToken);
+
+                  if (response.success) {
+                    toast.success(response.message || "Units uploaded successfully");
+                    if (response.results && response.results.errors.length > 0) {
+                      console.log("Upload errors:", response.results.errors);
+                      toast.info(`${response.results.errors.length} rows had errors. Check console for details.`);
+                    }
+                    setUploadUnitsDialogOpen(false);
+                    setUploadUnitsFile(null);
+                    setSelectedProjectForUnits("");
+                    // Refresh units data
+                    fetchAllUnitsForListing();
+                  } else {
+                    toast.error(response.message || "Failed to upload units");
+                  }
+                } catch (error: any) {
+                  console.error("Failed to bulk upload units:", error);
+                  toast.error(error.message || "Failed to upload units");
+                }
+              }}
+              disabled={!uploadUnitsFile || !selectedProjectForUnits}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Upload Units
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Test Celebration Button - Fixed position */}
+      <Button
+        onClick={() => setShowCelebration(true)}
+        className="fixed bottom-4 right-4 bg-purple-600 hover:bg-purple-700 text-white shadow-lg z-50"
+      >
+        🎉 Test Celebration
+      </Button>
+
+      {/* Celebration Dialog */}
+      <Dialog open={showCelebration} onOpenChange={setShowCelebration}>
+        <DialogContent className="max-w-md border-0 bg-gradient-to-br from-green-50 to-blue-50 overflow-hidden">
+          <style jsx global>{`
+            @keyframes float-up {
+              0% {
+                transform: translateY(100vh) rotate(0deg);
+                opacity: 1;
+              }
+              100% {
+                transform: translateY(-100vh) rotate(360deg);
+                opacity: 0;
+              }
+            }
+            
+            @keyframes confetti {
+              0% {
+                transform: translateY(0) rotate(0deg);
+                opacity: 1;
+              }
+              100% {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
+              }
+            }
+            
+            .balloon {
+              position: absolute;
+              bottom: -100px;
+              animation: float-up 6s ease-in infinite;
+              font-size: 3rem;
+            }
+            
+            .balloon:nth-child(1) { left: 10%; animation-delay: 0s; }
+            .balloon:nth-child(2) { left: 25%; animation-delay: 0.5s; }
+            .balloon:nth-child(3) { left: 40%; animation-delay: 1s; }
+            .balloon:nth-child(4) { left: 55%; animation-delay: 1.5s; }
+            .balloon:nth-child(5) { left: 70%; animation-delay: 2s; }
+            .balloon:nth-child(6) { left: 85%; animation-delay: 2.5s; }
+            
+            .confetti {
+              position: absolute;
+              width: 10px;
+              height: 10px;
+              background: #f0f;
+              top: -10px;
+              animation: confetti 3s ease-in infinite;
+            }
+            
+            .confetti:nth-child(odd) { background: #0ff; }
+            .confetti:nth-child(3n) { background: #ff0; }
+            .confetti:nth-child(5n) { background: #0f0; }
+          `}</style>
+          
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="balloon">🎈</div>
+            <div className="balloon">🎈</div>
+            <div className="balloon">🎈</div>
+            <div className="balloon">🎈</div>
+            <div className="balloon">🎈</div>
+            <div className="balloon">🎈</div>
+            
+            {[...Array(20)].map((_, i) => (
+              <div 
+                key={i}
+                className="confetti"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  animationDelay: `${Math.random() * 3}s`,
+                  animationDuration: `${2 + Math.random() * 2}s`
+                }}
+              />
+            ))}
+          </div>
+          
+          <div className="relative z-10 text-center py-8">
+            <div className="text-6xl mb-4 animate-bounce">🎉</div>
+            <h2 className="text-3xl font-bold text-green-600 mb-2">
+              Congratulations!
+            </h2>
+            <p className="text-xl text-gray-700 mb-4">
+              Handover Completed Successfully!
+            </p>
+            <div className="bg-white rounded-lg p-4 shadow-md mb-6">
+              <p className="text-sm text-gray-600 mb-2">
+                All documents have been verified and submitted.
+              </p>
+              <p className="text-sm font-semibold text-blue-600">
+                A congratulations email has been sent to the client.
+              </p>
+            </div>
+            <div className="flex gap-2 justify-center">
+              <Button
+                onClick={() => setShowCelebration(false)}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                ✓ Great!
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowCelebration(false);
+                  // Could navigate somewhere or refresh
+                }}
+                variant="outline"
+              >
+                View Details
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

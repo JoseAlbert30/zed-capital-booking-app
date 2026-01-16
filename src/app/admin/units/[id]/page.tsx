@@ -1,0 +1,1479 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { getUnitById } from "@/lib/api";
+import { 
+  updateUnitPaymentStatus, 
+  addUnitRemark, 
+  sendUnitSOAEmail,
+  sendUnitHandoverEmail, 
+  getUnitHandoverStatus, 
+  updateUnitMortgageStatus,
+  sendUnitBookingLink,
+  uploadUnitAttachment,
+  deleteUnitAttachment,
+  HandoverStatus
+} from "@/lib/unit-api";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { 
+  ArrowLeft, 
+  Building2, 
+  Home, 
+  MapPin, 
+  Users,
+  FileText,
+  Upload,
+  Calendar,
+  CreditCard,
+  CheckCircle,
+  Eye,
+  Download,
+  Trash2,
+  Check,
+  X,
+  Send,
+  Link as LinkIcon,
+  Paperclip,
+  Mail
+} from "lucide-react";
+import { format } from "date-fns";
+import { toast } from "sonner";
+
+interface Attachment {
+  id: number;
+  filename: string;
+  type: string;
+  filepath: string;
+  full_url: string;
+  created_at: string;
+}
+
+interface Unit {
+  id: number;
+  unit: string;
+  floor: string;
+  building: string;
+  square_footage: number;
+  dewa_premise_number: string;
+  status: string;
+  payment_status: string;
+  payment_date: string | null;
+  has_mortgage: boolean;
+  handover_ready: boolean;
+  handover_email_sent: boolean;
+  handover_email_sent_at: string | null;
+  property: {
+    id: number;
+    project_name: string;
+    location: string;
+  };
+  users: Array<{
+    id: number;
+    full_name: string;
+    email: string;
+    mobile_number: string;
+    payment_status: string;
+    pivot: {
+      is_primary: boolean;
+    };
+  }>;
+  attachments: Attachment[];
+  remarks: Array<{
+    date: string;
+    time: string;
+    event: string;
+    type?: string;
+    admin_name?: string;
+  }>;
+  bookings?: Array<{
+    id: number;
+    status: string;
+    handover_checklist?: string;
+    handover_declaration?: string;
+    handover_photo?: string;
+    client_signature?: string;
+    handover_completed_at?: string;
+  }>;
+}
+
+export default function UnitDetailsPage() {
+  const router = useRouter();
+  const params = useParams();
+  const unitId = params.id as string;
+  
+  const [unit, setUnit] = useState<Unit | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [remarks, setRemarks] = useState<Array<{date: string, time: string, event: string, type?: string, admin_name?: string}>>([]);
+  const [newRemark, setNewRemark] = useState("");
+  const [savingRemark, setSavingRemark] = useState(false);
+  
+  // Payment state
+  const [paymentStatusModalOpen, setPaymentStatusModalOpen] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<string>("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [updating, setUpdating] = useState(false);
+  
+  // SOA state
+  const [soaFile, setSoaFile] = useState<File | null>(null);
+  const [uploadingSOA, setUploadingSOA] = useState(false);
+  
+  // Handover state
+  const [handoverStatus, setHandoverStatus] = useState<HandoverStatus | null>(null);
+  const [uploadingHandover, setUploadingHandover] = useState<{[key: string]: boolean}>({});
+  const [sendingHandoverEmail, setSendingHandoverEmail] = useState(false);
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [sendingBookingLink, setSendingBookingLink] = useState(false);
+  
+  // Document viewer
+  const [viewingDocument, setViewingDocument] = useState<Attachment | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    isOpen: boolean;
+    attachmentId: number | null;
+    filename: string;
+  }>({ isOpen: false, attachmentId: null, filename: '' });
+
+  const fetchUnitDetails = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+
+      const unitData = await getUnitById(parseInt(unitId), token);
+      setUnit(unitData as any);
+      setPaymentStatus((unitData as any).payment_status);
+      setRemarks(Array.isArray((unitData as any).remarks) ? (unitData as any).remarks : []);
+      
+      // Fetch handover status
+      try {
+        const status = await getUnitHandoverStatus(parseInt(unitId), token);
+        if (status && Array.isArray(status.requirements)) {
+          setHandoverStatus(status);
+        }
+      } catch (error) {
+        console.error("Failed to fetch handover status:", error);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load unit details");
+      console.error("Error fetching unit details:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const token = localStorage.getItem("authToken");
+    const isAdmin = localStorage.getItem("isAdmin");
+
+    if (!token || isAdmin !== "true") {
+      router.push("/login");
+      return;
+    }
+
+    fetchUnitDetails();
+  }, [unitId, router]);
+
+  const handleSOAFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSoaFile(e.target.files[0]);
+    }
+  };
+
+  const handleUploadSOA = async () => {
+    if (!soaFile || !unit) return;
+
+    setUploadingSOA(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        toast.error("You must be logged in");
+        return;
+      }
+
+      await sendUnitSOAEmail(unit.id, soaFile, token);
+      toast.success("SOA uploaded successfully");
+      setSoaFile(null);
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to upload SOA");
+    } finally {
+      setUploadingSOA(false);
+    }
+  };
+
+  const handleUpdatePaymentStatus = async () => {
+    if (!unit) return;
+
+    setUpdating(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        toast.error("You must be logged in");
+        return;
+      }
+
+      await updateUnitPaymentStatus(unit.id, paymentStatus, token, receiptFile || undefined);
+      toast.success("Payment status updated successfully");
+      setPaymentStatusModalOpen(false);
+      setReceiptFile(null);
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update payment status");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleToggleMortgage = async () => {
+    if (!unit) return;
+
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+
+      await updateUnitMortgageStatus(unit.id, !handoverStatus?.has_mortgage, token);
+      toast.success(`Mortgage status updated to: ${!handoverStatus?.has_mortgage ? "Has Mortgage" : "No Mortgage"}`);
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update mortgage status");
+    }
+  };
+
+  const handleHandoverUpload = async (type: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0] || !unit) return;
+
+    const file = e.target.files[0];
+    setUploadingHandover({...uploadingHandover, [type]: true});
+
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+
+      await uploadUnitAttachment(unit.id, file, type, token);
+      toast.success("Document uploaded successfully");
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to upload document");
+    } finally {
+      setUploadingHandover({...uploadingHandover, [type]: false});
+    }
+  };
+
+  const handleSendHandoverEmail = async () => {
+    if (!unit) return;
+
+    const hasSOA = unit.attachments?.some(att => att.type === "soa");
+    if (!hasSOA) {
+      toast.error("Please upload SOA before sending handover notice");
+      return;
+    }
+
+    setSendingHandoverEmail(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        toast.error("You must be logged in");
+        return;
+      }
+
+      await sendUnitHandoverEmail(unit.id, token);
+      toast.success(`Handover notice sent to all ${unit.users.length} owner(s)`);
+      setShowEmailPreview(false);
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send handover notice");
+    } finally {
+      setSendingHandoverEmail(false);
+    }
+  };
+
+  const handleSendBookingLink = async () => {
+    if (!unit) return;
+
+    setSendingBookingLink(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        toast.error("You must be logged in");
+        return;
+      }
+
+      await sendUnitBookingLink(unit.id, token);
+      toast.success(`Booking link sent to all ${unit.users.length} owner(s)`);
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send booking link");
+    } finally {
+      setSendingBookingLink(false);
+    }
+  };
+
+  const handleDeleteAttachment = (attachmentId: number, filename: string) => {
+    setDeleteConfirmation({
+      isOpen: true,
+      attachmentId,
+      filename
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmation.attachmentId || !unit) return;
+
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+
+      await deleteUnitAttachment(unit.id, deleteConfirmation.attachmentId, token);
+      toast.success("Attachment deleted successfully");
+      setDeleteConfirmation({ isOpen: false, attachmentId: null, filename: '' });
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete attachment");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading unit details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!unit) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">Unit not found</p>
+          <Button onClick={() => router.push("/admin")} className="mt-4">
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const primaryOwner = unit.users?.find(u => u.pivot?.is_primary) || unit.users?.[0];
+  const coOwners = unit.users?.filter(u => !u.pivot?.is_primary) || [];
+  const soaAttachments = unit.attachments?.filter(att => att.type === "soa") || [];
+  const handoverTypes = handoverStatus?.requirements?.map(req => req.type) || [];
+  const otherAttachments = unit.attachments?.filter(att => 
+    att.type !== "soa" && !handoverTypes.includes(att.type)
+  ) || [];
+
+  const getPaymentStatusBadge = (status: string) => {
+    const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline", label: string }> = {
+      pending: { variant: "destructive", label: "Pending" },
+      partial: { variant: "secondary", label: "Partial" },
+      fully_paid: { variant: "default", label: "Fully Paid" },
+    };
+    const config = variants[status] || variants.pending;
+    return <Badge variant={config.variant}>{config.label}</Badge>;
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto p-6 space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => router.push("/admin")}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Unit {unit.unit}</h1>
+              <p className="text-gray-600">{unit.property.project_name}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {unit.handover_email_sent && (
+              <Button
+                onClick={() => setPaymentStatusModalOpen(true)}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <CreditCard className="w-4 h-4" />
+                Update Payment
+              </Button>
+            )}
+            {(() => {
+              const hasSOA = unit.attachments?.some(att => att.type === "soa");
+              return (
+                <Button
+                  onClick={() => {
+                    if (!hasSOA) {
+                      toast.error("Please upload SOA before sending handover notice");
+                      return;
+                    }
+                    setShowEmailPreview(true);
+                  }}
+                  disabled={!hasSOA}
+                  className={`flex items-center gap-2 ${!hasSOA ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={!hasSOA ? "Please upload SOA first" : "Preview and send handover notice"}
+                >
+                  <Eye className="w-4 h-4" />
+                  {unit.handover_email_sent ? "Resend Handover Notice" : "Send Handover Notice"}
+                </Button>
+              );
+            })()}
+            {handoverStatus?.handover_ready && (
+              <Button
+                onClick={handleSendBookingLink}
+                disabled={sendingBookingLink}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+              >
+                <LinkIcon className="w-4 h-4" />
+                {sendingBookingLink ? "Sending..." : "Send Booking Link"}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Unit Information */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5" />
+                  Unit Information
+                </CardTitle>
+                <CardDescription>Property details and specifications</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Unit Number</p>
+                    <p className="font-medium">{unit.unit}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Project</p>
+                    <p className="font-medium">{unit.property.project_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Location</p>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-gray-400" />
+                      <p className="font-medium">{unit.property.location}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Floor</p>
+                    <p className="font-medium">{unit.floor || "N/A"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Building</p>
+                    <p className="font-medium">{unit.building || "N/A"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Square Footage</p>
+                    <p className="font-medium">{unit.square_footage} sq ft</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">DEWA Premise No.</p>
+                    <p className="font-medium">{unit.dewa_premise_number || "N/A"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Status</p>
+                    <Badge variant={unit.status === "claimed" ? "default" : "secondary"}>
+                      {unit.status}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Payment Status</p>
+                    {getPaymentStatusBadge(unit.payment_status)}
+                  </div>
+                  {unit.payment_date && (
+                    <div>
+                      <p className="text-sm text-gray-500">Payment Date</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <p className="font-medium">{format(new Date(unit.payment_date), "MMM d, yyyy")}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Owners */}
+            {primaryOwner && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    Owners ({unit.users.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Primary Owner */}
+                  <div className="flex items-center justify-between p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium text-lg">{primaryOwner.full_name}</p>
+                        <Badge variant="outline">Primary</Badge>
+                      </div>
+                      <p className="text-sm text-gray-600">{primaryOwner.email}</p>
+                      <p className="text-sm text-gray-600">{primaryOwner.mobile_number}</p>
+                    </div>
+                    <Button onClick={() => router.push(`/admin/users/${primaryOwner.id}`)}>
+                      View Details
+                    </Button>
+                  </div>
+
+                  {/* Co-Owners */}
+                  {coOwners.map((owner) => (
+                    <div key={owner.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                      <div>
+                        <p className="font-medium">{owner.full_name}</p>
+                        <p className="text-sm text-gray-600">{owner.email}</p>
+                      </div>
+                      <Button 
+                        variant="outline"
+                        onClick={() => router.push(`/admin/users/${owner.id}`)}
+                      >
+                        View Details
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Activity Timeline */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Activity Timeline</CardTitle>
+                <CardDescription>System events and internal notes</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4 max-h-[400px] overflow-y-auto mb-6">
+                  {remarks.length > 0 ? (
+                    <div className="relative border-l-2 border-gray-300 pl-6 space-y-4">
+                      {[...remarks].reverse().map((entry, index) => (
+                        <div key={index} className="relative">
+                          <div className="absolute -left-[26px] w-3 h-3 rounded-full bg-blue-600 border-2 border-white"></div>
+                          <div className="bg-gray-50 rounded-lg p-4 shadow-sm">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-gray-500" />
+                                <span className="text-sm font-medium text-gray-700">
+                                  {entry.date} at {entry.time}
+                                </span>
+                                {entry.admin_name && (
+                                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full font-medium">
+                                    by {entry.admin_name}
+                                  </span>
+                                )}
+                              </div>
+                              {entry.type && (
+                                <Badge variant={entry.type === 'email_sent' ? 'default' : 'secondary'}>
+                                  {entry.type.replace('_', ' ').toUpperCase()}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-gray-800">{entry.event}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-8">No activity recorded yet</p>
+                  )}
+                </div>
+
+                <Separator className="my-4" />
+                <div className="space-y-2">
+                  <Label>Add New Note</Label>
+                  <Textarea
+                    value={newRemark}
+                    onChange={(e) => setNewRemark(e.target.value)}
+                    placeholder="Add a manual note to the timeline..."
+                    className="min-h-[80px]"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={async () => {
+                        if (newRemark.trim()) {
+                          setSavingRemark(true);
+                          try {
+                            const token = localStorage.getItem("authToken");
+                            if (!token) {
+                              toast.error("You must be logged in");
+                              return;
+                            }
+
+                            await addUnitRemark(unit.id, newRemark, token);
+                            setNewRemark("");
+                            toast.success("Note added to timeline successfully");
+                            await fetchUnitDetails();
+                          } catch (error: any) {
+                            toast.error(error.message || "Failed to add note");
+                          } finally {
+                            setSavingRemark(false);
+                          }
+                        }
+                      }}
+                      disabled={!newRemark.trim() || savingRemark}
+                    >
+                      {savingRemark ? "Adding..." : "Add to Timeline"}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column */}
+          <div className="space-y-6">
+            {/* SOA Attachments */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Statement of Accounts (SOA)
+                </CardTitle>
+                <CardDescription>
+                  {soaAttachments.length} document{soaAttachments.length !== 1 ? 's' : ''}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {soaAttachments.length > 0 ? (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Current SOA Document</Label>
+                      {soaAttachments.map((attachment) => {
+                        const truncatedName = attachment.filename.length > 30 
+                          ? attachment.filename.substring(0, 15) + '...' 
+                          : attachment.filename;
+                        
+                        return (
+                          <div
+                            key={attachment.id}
+                            className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium" title={attachment.filename}>{truncatedName}</p>
+                              <p className="text-xs text-gray-500">
+                                {format(new Date(attachment.created_at), "MMM d, yyyy")}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="flex-shrink-0"
+                              onClick={() => setViewingDocument(attachment)}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="flex-shrink-0"
+                              onClick={() => window.open(attachment.full_url, '_blank')}
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="flex-shrink-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDeleteAttachment(attachment.id, attachment.filename)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Upload SOA</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="file"
+                          accept=".pdf"
+                          onChange={handleSOAFileChange}
+                          className="flex-1"
+                        />
+                        <Button 
+                          onClick={handleUploadSOA}
+                          disabled={!soaFile || uploadingSOA}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          <Upload className="w-4 h-4 mr-2" />
+                          {uploadingSOA ? "Uploading..." : "Upload"}
+                        </Button>
+                      </div>
+                      {soaFile && (
+                        <p className="text-xs text-gray-600">Selected: {soaFile.name}</p>
+                      )}
+                      <div className="text-center py-4 text-gray-500">
+                        <FileText className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                        <p className="text-xs">No SOA document uploaded yet</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Handover Requirements */}
+            {unit.handover_email_sent && (
+              <Card className="border-2 border-blue-200">
+                <CardHeader className="bg-blue-50 rounded-t-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5 text-blue-600" />
+                        Handover Requirements
+                      </CardTitle>
+                      <CardDescription>
+                        {handoverStatus && handoverStatus.handover_ready ? (
+                          <span className="text-green-600 font-medium flex items-center gap-1 mt-1">
+                            <Check className="w-5 h-5" />
+                            All Complete
+                          </span>
+                        ) : (
+                          <span className="text-orange-600 flex items-center gap-1">
+                            <X className="w-5 h-5" />
+                            {handoverStatus?.requirements?.filter(r => !r.uploaded).length || 0} pending
+                          </span>
+                        )}
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleToggleMortgage}
+                      className={handoverStatus?.has_mortgage ? "bg-orange-50 border-orange-300" : ""}
+                    >
+                      {handoverStatus?.has_mortgage ? "Has Mortgage ✓" : "No Mortgage"}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  {handoverStatus && Array.isArray(handoverStatus.requirements) ? (
+                    <div className="space-y-4">
+                      {handoverStatus.requirements.map((req) => {
+                        const associatedFiles = unit.attachments?.filter(att => att.type === req.type) || [];
+                        
+                        return (
+                          <div
+                            key={req.type}
+                            className={`p-4 border-2 rounded-lg transition-all ${
+                              req.uploaded 
+                                ? 'border-green-300 bg-green-50' 
+                                : 'border-gray-200 hover:border-blue-300'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start gap-3 flex-1">
+                                <div className="mt-1">
+                                  {req.uploaded ? (
+                                    <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                                      <Check className="w-4 h-4 text-white" />
+                                    </div>
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full border-2 border-gray-300" />
+                                  )}
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className={`font-medium ${req.uploaded ? 'text-green-800' : 'text-gray-900'}`}>
+                                    {req.label}
+                                  </h4>
+                                  
+                                  {associatedFiles.length > 0 && (
+                                    <div className="mt-3 space-y-2">
+                                      {associatedFiles.map((file) => {
+                                        const truncatedName = file.filename.length > 25 
+                                          ? file.filename.substring(0,18) + '...' 
+                                          : file.filename;
+                                        
+                                        return (
+                                          <div key={file.id} className="flex items-center gap-2 text-xs bg-white p-2 rounded border border-gray-200">
+                                            <FileText className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                                            <span 
+                                              className="flex-1 font-medium" 
+                                              title={file.filename}
+                                            >
+                                              {truncatedName}
+                                            </span>
+                                            <Button 
+                                              variant="ghost" 
+                                              size="icon"
+                                              className="h-6 w-6"
+                                              onClick={() => setViewingDocument(file)}
+                                              title="View document"
+                                            >
+                                              <Eye className="w-3 h-3" />
+                                            </Button>
+                                            <Button 
+                                              variant="ghost" 
+                                              size="icon"
+                                              className="h-6 w-6"
+                                              onClick={() => window.open(file.full_url, '_blank')}
+                                              title="Download"
+                                            >
+                                              <Download className="w-3 h-3" />
+                                            </Button>
+                                            <Button 
+                                              variant="ghost" 
+                                              size="icon"
+                                              className="h-6 w-6 text-red-600 hover:text-red-700"
+                                              onClick={() => handleDeleteAttachment(file.id, file.filename)}
+                                              title="Delete"
+                                            >
+                                              <Trash2 className="w-3 h-3" />
+                                            </Button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              {!req.uploaded && req.type !== 'payment_proof' && (
+                                <div>
+                                  <Input
+                                    type="file"
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    className="hidden"
+                                    id={`upload-${req.type}`}
+                                    onChange={(e) => handleHandoverUpload(req.type, e)}
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={uploadingHandover[req.type]}
+                                    onClick={() => document.getElementById(`upload-${req.type}`)?.click()}
+                                  >
+                                    {uploadingHandover[req.type] ? (
+                                      "Uploading..."
+                                    ) : (
+                                      <>
+                                        <Upload className="w-3 h-3 mr-1" />
+                                        Upload
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">Loading requirements...</p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Handover Final Checklist */}
+            {(() => {
+              const completedBooking = unit.bookings?.find(b => b.status === 'completed' && b.handover_checklist);
+              if (!completedBooking) return null;
+              
+              return (
+                <Card className="border-2 border-green-200">
+                  <CardHeader className="bg-green-50 rounded-t-lg">
+                    <CardTitle className="flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      Handover Final Checklist
+                    </CardTitle>
+                    <CardDescription>
+                      Completed handover documents and signatures
+                      {completedBooking.handover_completed_at && (
+                        <span className="ml-2 text-green-600 font-medium">
+                          • Completed {format(new Date(completedBooking.handover_completed_at), "MMM d, yyyy")}
+                        </span>
+                      )}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Handover Checklist */}
+                      {completedBooking.handover_checklist && (
+                        <div className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50 hover:bg-blue-100 transition-colors">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1">
+                              <FileText className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
+                              <div>
+                                <p className="font-semibold text-sm">Handover Checklist</p>
+                                <p className="text-xs text-gray-600 mt-1">Annotated checklist PDF</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0 h-8 w-8"
+                                onClick={() => window.open(`http://localhost:8000/api/storage/${completedBooking.handover_checklist}`, '_blank')}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0 h-8 w-8"
+                                onClick={() => {
+                                  const link = document.createElement('a');
+                                  link.href = `http://localhost:8000/api/storage/${completedBooking.handover_checklist}`;
+                                  link.download = `unit_${unit.unit}_handover_checklist.pdf`;
+                                  link.click();
+                                }}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Declaration */}
+                      {completedBooking.handover_declaration && (
+                        <div className="border-2 border-purple-200 rounded-lg p-4 bg-purple-50 hover:bg-purple-100 transition-colors">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1">
+                              <FileText className="w-5 h-5 text-purple-600 mt-1 flex-shrink-0" />
+                              <div>
+                                <p className="font-semibold text-sm">Declaration V3</p>
+                                <p className="text-xs text-gray-600 mt-1">Signed declaration PDF</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0 h-8 w-8"
+                                onClick={() => window.open(`http://localhost:8000/api/storage/${completedBooking.handover_declaration}`, '_blank')}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0 h-8 w-8"
+                                onClick={() => {
+                                  const link = document.createElement('a');
+                                  link.href = `http://localhost:8000/api/storage/${completedBooking.handover_declaration}`;
+                                  link.download = `unit_${unit.unit}_declaration.pdf`;
+                                  link.click();
+                                }}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Handover Photo */}
+                      {completedBooking.handover_photo && (
+                        <div className="border-2 border-green-200 rounded-lg p-4 bg-green-50 hover:bg-green-100 transition-colors">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1">
+                              <img 
+                                src={`http://localhost:8000/api/storage/${completedBooking.handover_photo}`}
+                                alt="Handover photo"
+                                className="w-16 h-16 object-cover rounded flex-shrink-0"
+                              />
+                              <div>
+                                <p className="font-semibold text-sm">Handover Photo</p>
+                                <p className="text-xs text-gray-600 mt-1">Client with unit keys</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0 h-8 w-8"
+                                onClick={() => window.open(`http://localhost:8000/api/storage/${completedBooking.handover_photo}`, '_blank')}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0 h-8 w-8"
+                                onClick={() => {
+                                  const link = document.createElement('a');
+                                  link.href = `http://localhost:8000/api/storage/${completedBooking.handover_photo}`;
+                                  link.download = `unit_${unit.unit}_handover_photo.jpg`;
+                                  link.click();
+                                }}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Client Signature */}
+                      {completedBooking.client_signature && (
+                        <div className="border-2 border-amber-200 rounded-lg p-4 bg-amber-50 hover:bg-amber-100 transition-colors">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 flex-1">
+                              <img 
+                                src={`http://localhost:8000/api/storage/${completedBooking.client_signature}`}
+                                alt="Client signature"
+                                className="w-24 h-16 object-contain bg-white border rounded flex-shrink-0"
+                              />
+                              <div>
+                                <p className="font-semibold text-sm">Client Signature</p>
+                                <p className="text-xs text-gray-600 mt-1">Final acknowledgment</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0 h-8 w-8"
+                                onClick={() => window.open(`http://localhost:8000/api/storage/${completedBooking.client_signature}`, '_blank')}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex-shrink-0 h-8 w-8"
+                                onClick={() => {
+                                  const link = document.createElement('a');
+                                  link.href = `http://localhost:8000/api/storage/${completedBooking.client_signature}`;
+                                  link.download = `unit_${unit.unit}_signature.png`;
+                                  link.click();
+                                }}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
+            {/* Other Attachments (Receipts, etc.) */}
+            {otherAttachments.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
+                    Other Documents
+                  </CardTitle>
+                  <CardDescription>
+                    Payment receipts and other attachments ({otherAttachments.length})
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {otherAttachments.map((attachment) => {
+                      const truncatedName = attachment.filename.length > 30 
+                        ? attachment.filename.substring(0, 15) + '...' 
+                        : attachment.filename;
+                      
+                      return (
+                        <div
+                          key={attachment.id}
+                          className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium" title={attachment.filename}>{truncatedName}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs">
+                                {attachment.type}
+                              </Badge>
+                              <p className="text-xs text-gray-500">
+                                {format(new Date(attachment.created_at), "MMM d, yyyy")}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="flex-shrink-0"
+                            onClick={() => setViewingDocument(attachment)}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="flex-shrink-0"
+                            onClick={() => window.open(attachment.full_url, '_blank')}
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="flex-shrink-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => handleDeleteAttachment(attachment.id, attachment.filename)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Payment Status Modal */}
+      <Dialog open={paymentStatusModalOpen} onOpenChange={setPaymentStatusModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update Payment Status</DialogTitle>
+            <DialogDescription>
+              Update the payment status for this unit and optionally upload a receipt.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Payment Status</Label>
+              <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="partial">Partial</SelectItem>
+                  <SelectItem value="fully_paid">Fully Paid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Receipt (Optional)</Label>
+              <Input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                onChange={(e) => e.target.files && setReceiptFile(e.target.files[0])}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentStatusModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdatePaymentStatus} disabled={updating}>
+              {updating ? "Updating..." : "Update"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Document Viewer Dialog */}
+      <Dialog open={!!viewingDocument} onOpenChange={() => setViewingDocument(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5" />
+              {viewingDocument?.filename}
+            </DialogTitle>
+            <DialogDescription>
+              <div className="flex items-center gap-3 mt-2">
+                <Badge variant="outline">{viewingDocument?.type}</Badge>
+                {viewingDocument && (
+                  <span className="text-xs text-gray-500">
+                    {format(new Date(viewingDocument.created_at), "MMM d, yyyy 'at' h:mm a")}
+                  </span>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto bg-gray-50 rounded-lg p-4">
+            {viewingDocument && (() => {
+              const fileUrl = viewingDocument.full_url;
+              
+              if (!fileUrl) {
+                return (
+                  <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+                    <FileText className="w-16 h-16 text-gray-400 mb-4" />
+                    <p className="text-gray-600 mb-4">File URL not available</p>
+                    <Button onClick={() => setViewingDocument(null)}>
+                      Close
+                    </Button>
+                  </div>
+                );
+              }
+              
+              const isImage = viewingDocument.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+              const isPdf = viewingDocument.filename.match(/\.pdf$/i);
+
+              if (isImage) {
+                return (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <img 
+                      src={fileUrl} 
+                      alt={viewingDocument.filename}
+                      className="max-w-full max-h-[70vh] object-contain rounded"
+                    />
+                  </div>
+                );
+              } else if (isPdf) {
+                return (
+                  <iframe
+                    src={fileUrl}
+                    className="w-full h-[70vh] rounded border-0"
+                    title={viewingDocument.filename}
+                  />
+                );
+              } else {
+                return (
+                  <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+                    <FileText className="w-16 h-16 text-gray-400 mb-4" />
+                    <p className="text-gray-600 mb-4">Preview not available for this file type</p>
+                    <Button
+                      onClick={() => window.open(fileUrl, '_blank')}
+                      variant="outline"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download File
+                    </Button>
+                  </div>
+                );
+              }
+            })()}
+          </div>
+          <DialogFooter className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              onClick={() => viewingDocument && window.open(viewingDocument.full_url, '_blank')}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download
+            </Button>
+            <Button onClick={() => setViewingDocument(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmation.isOpen} onOpenChange={(open) => 
+        !open && setDeleteConfirmation({ isOpen: false, attachmentId: null, filename: '' })
+      }>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{deleteConfirmation.filename}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setDeleteConfirmation({ isOpen: false, attachmentId: null, filename: '' })}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Preview & Send Dialog */}
+      <Dialog open={showEmailPreview} onOpenChange={setShowEmailPreview}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-blue-600" />
+              Preview Handover Notice Email
+            </DialogTitle>
+            <DialogDescription>
+              Review the email content before sending to all unit owners
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-auto space-y-4 py-4">
+            {/* Recipients Section */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold">Recipients</Label>
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">To:</p>
+                    <div className="space-y-1.5">
+                      {unit.users.map((owner) => (
+                        <div key={owner.id} className="flex items-start gap-2">
+                          <span className="text-sm font-medium text-blue-600">&bull;</span>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{owner.full_name}</p>
+                            <p className="text-xs text-gray-600">{owner.email}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {unit.users.length > 1 && (
+                    <div className="p-2 bg-blue-50 border border-blue-200 rounded">
+                      <p className="text-xs text-blue-800">
+                        &#9432; All {unit.users.length} recipient(s) will receive this email together
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Subject Line */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold">Subject</Label>
+              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                <p className="text-sm font-medium">Handover Notice - Unit {unit.unit}, {unit.property.project_name}</p>
+              </div>
+            </div>
+
+            {/* Email Content Preview */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold">Email Content</Label>
+              <div className="bg-white rounded-lg border-2 border-gray-300 p-6 max-h-[400px] overflow-y-auto">
+                <div className="space-y-4 text-sm">
+                  <p>Dear {primaryOwner?.full_name.split(' ')[0] || 'Owner'},</p>
+                  
+                  <p>We are pleased to inform you that your unit <strong>{unit.unit}</strong> at <strong>{unit.property.project_name}</strong> is now ready for final handover following the issuance of the Building Completion Certificate by the Dubai Development Authority.</p>
+                  
+                  <p>This letter serves as the <strong>official Handover Notice</strong>. Kindly review and complete the steps outlined below to proceed with the handover process.</p>
+                  
+                  <Separator className="my-4" />
+                  
+                  <div>
+                    <h3 className="font-bold text-base mb-2">1. Final Payment</h3>
+                    <p>Kindly arrange settlement of the final amount due in accordance with the Sale and Purchase Agreement within <strong>30 calendar days</strong> from the date of this notice.</p>
+                    <p className="mt-2"><strong>Find your Statement of Account attached to this email.</strong></p>
+                  </div>
+                  
+                  <div>
+                    <h3 className="font-bold text-base mb-2">2. Utilities Connections, Registrations & Service Charge</h3>
+                    <p>To proceed with the handover, please complete the <strong>DEWA</strong> and <strong>Chilled Water / AC (Zenner)</strong> registrations.</p>
+                  </div>
+                  
+                  <div>
+                    <h3 className="font-bold text-base mb-2">3. Handover Appointment</h3>
+                    <p>Once your payments have been settled and all utility registrations have been completed, our team will contact you to arrange the unit inspection and key handover.</p>
+                  </div>
+                  
+                  <Separator className="my-4" />
+                  
+                  <p>For any queries, please contact us at <strong>vantage@zedcapital.ae</strong>.</p>
+                  
+                  <p>We look forward to welcoming you to your new home at <strong>{unit.property.project_name}</strong>.</p>
+                  
+                  <p className="mt-4">
+                    Warm regards,<br/>
+                    <strong>Vantage Ventures Real Estate Development L.L.C.</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Attachments Section */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold flex items-center gap-2">
+                <Paperclip className="w-4 h-4" />
+                Attachments
+              </Label>
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                {soaAttachments.length > 0 ? (
+                  <div className="space-y-2">
+                    {soaAttachments.map((attachment) => (
+                      <div key={attachment.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-300">
+                        <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{attachment.filename}</p>
+                          <p className="text-xs text-gray-500">
+                            Uploaded {format(new Date(attachment.created_at), "MMM d, yyyy")}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setViewingDocument(attachment)}
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          View
+                        </Button>
+                        <Badge variant="outline" className="text-xs">PDF</Badge>
+                      </div>
+                    ))}
+                    
+                    <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+                      <p className="text-xs text-green-800">
+                        &#10003; SOA document{soaAttachments.length > 1 ? 's' : ''} will be attached to this email
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded">
+                    <p className="text-sm text-red-800 font-medium">
+                      &#9888; No SOA uploaded yet. Please upload SOA before sending.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowEmailPreview(false)}
+              disabled={sendingHandoverEmail}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSendHandoverEmail}
+              disabled={sendingHandoverEmail || soaAttachments.length === 0}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              {sendingHandoverEmail ? "Sending..." : "Send Email Now"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
