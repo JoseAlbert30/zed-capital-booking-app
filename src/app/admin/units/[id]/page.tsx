@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { getUnitById } from "@/lib/api";
+import { getUnitById, downloadServiceChargeAcknowledgement, downloadNOCHandover } from "@/lib/api";
+import { getStorageUrl, API_BASE_URL } from "@/config/api";
 import { 
   updateUnitPaymentStatus, 
   addUnitRemark, 
@@ -13,6 +14,9 @@ import {
   sendUnitBookingLink,
   uploadUnitAttachment,
   deleteUnitAttachment,
+  previewDeveloperRequirements,
+  sendRequirementsToDeveloper,
+  validateHandoverRequirements,
   HandoverStatus
 } from "@/lib/unit-api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,6 +85,7 @@ interface Unit {
     full_name: string;
     email: string;
     mobile_number: string;
+    passport_number?: string;
     payment_status: string;
     pivot: {
       is_primary: boolean;
@@ -132,6 +137,10 @@ export default function UnitDetailsPage() {
   const [sendingHandoverEmail, setSendingHandoverEmail] = useState(false);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [sendingBookingLink, setSendingBookingLink] = useState(false);
+  const [sendingToDeveloper, setSendingToDeveloper] = useState(false);
+  const [showDeveloperPreview, setShowDeveloperPreview] = useState(false);
+  const [developerPreview, setDeveloperPreview] = useState<any>(null);
+  const [validatingHandover, setValidatingHandover] = useState(false);
   
   // Document viewer
   const [viewingDocument, setViewingDocument] = useState<Attachment | null>(null);
@@ -157,9 +166,7 @@ export default function UnitDetailsPage() {
       // Fetch handover status
       try {
         const status = await getUnitHandoverStatus(parseInt(unitId), token);
-        if (status && Array.isArray(status.requirements)) {
-          setHandoverStatus(status);
-        }
+        setHandoverStatus(status);
       } catch (error) {
         console.error("Failed to fetch handover status:", error);
       }
@@ -318,6 +325,47 @@ export default function UnitDetailsPage() {
     }
   };
 
+  const handleSendToDeveloper = async () => {
+    if (!unit) return;
+
+    // First show preview
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        toast.error("You must be logged in");
+        return;
+      }
+
+      const preview = await previewDeveloperRequirements(unit.id, token);
+      setDeveloperPreview(preview);
+      setShowDeveloperPreview(true);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load preview");
+    }
+  };
+
+  const confirmSendToDeveloper = async () => {
+    if (!unit) return;
+
+    setSendingToDeveloper(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        toast.error("You must be logged in");
+        return;
+      }
+
+      await sendRequirementsToDeveloper(unit.id, token);
+      toast.success("Requirements sent to developer for approval");
+      setShowDeveloperPreview(false);
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send requirements to developer");
+    } finally {
+      setSendingToDeveloper(false);
+    }
+  };
+
   const handleDeleteAttachment = (attachmentId: number, filename: string) => {
     setDeleteConfirmation({
       isOpen: true,
@@ -339,6 +387,27 @@ export default function UnitDetailsPage() {
       await fetchUnitDetails();
     } catch (error: any) {
       toast.error(error.message || "Failed to delete attachment");
+    }
+  };
+
+  const handleValidateHandoverRequirements = async () => {
+    if (!unit) return;
+
+    setValidatingHandover(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        toast.error("You must be logged in");
+        return;
+      }
+
+      const result = await validateHandoverRequirements(unit.id, token);
+      toast.success(result.handover_ready ? "All handover requirements met!" : "Handover requirements validated");
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to validate handover requirements");
+    } finally {
+      setValidatingHandover(false);
     }
   };
 
@@ -433,6 +502,15 @@ export default function UnitDetailsPage() {
                 </Button>
               );
             })()}
+            <Button
+              onClick={handleValidateHandoverRequirements}
+              disabled={validatingHandover}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <CheckCircle className="w-4 h-4" />
+              {validatingHandover ? "Validating..." : "Validate Handover"}
+            </Button>
             {handoverStatus?.handover_ready && (
               <Button
                 onClick={handleSendBookingLink}
@@ -533,6 +611,9 @@ export default function UnitDetailsPage() {
                       </div>
                       <p className="text-sm text-gray-600">{primaryOwner.email}</p>
                       <p className="text-sm text-gray-600">{primaryOwner.mobile_number}</p>
+                      {primaryOwner.passport_number && (
+                        <p className="text-sm text-gray-600">Passport: {primaryOwner.passport_number}</p>
+                      )}
                     </div>
                     <Button onClick={() => router.push(`/admin/users/${primaryOwner.id}`)}>
                       View Details
@@ -545,6 +626,9 @@ export default function UnitDetailsPage() {
                       <div>
                         <p className="font-medium">{owner.full_name}</p>
                         <p className="text-sm text-gray-600">{owner.email}</p>
+                        {owner.passport_number && (
+                          <p className="text-sm text-gray-600">Passport: {owner.passport_number}</p>
+                        )}
                       </div>
                       <Button 
                         variant="outline"
@@ -745,26 +829,56 @@ export default function UnitDetailsPage() {
             {unit.handover_email_sent && (
               <Card className="border-2 border-blue-200">
                 <CardHeader className="bg-blue-50 rounded-t-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <CheckCircle className="w-5 h-5 text-blue-600" />
-                        Handover Requirements
-                      </CardTitle>
-                      <CardDescription>
-                        {handoverStatus && handoverStatus.handover_ready ? (
-                          <span className="text-green-600 font-medium flex items-center gap-1 mt-1">
-                            <Check className="w-5 h-5" />
-                            All Complete
-                          </span>
-                        ) : (
-                          <span className="text-orange-600 flex items-center gap-1">
-                            <X className="w-5 h-5" />
-                            {handoverStatus?.requirements?.filter(r => !r.uploaded).length || 0} pending
-                          </span>
-                        )}
-                      </CardDescription>
-                    </div>
+                  <CardTitle className="flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-blue-600" />
+                    Handover Requirements
+                  </CardTitle>
+                  <CardDescription>
+                    {handoverStatus && handoverStatus.handover_ready ? (
+                      <span className="text-green-600 font-medium flex items-center gap-1 mt-1">
+                        <Check className="w-5 h-5" />
+                        All Complete
+                      </span>
+                    ) : (
+                      <span className="text-orange-600 flex items-center gap-1">
+                        <X className="w-5 h-5" />
+                        {handoverStatus?.requirements?.filter(r => !r.uploaded).length || 0} pending
+                      </span>
+                    )}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-6 pb-4 border-b">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const token = localStorage.getItem("authToken");
+                          if (!token) {
+                            toast.error("You must be logged in");
+                            return;
+                          }
+                          const blob = await downloadNOCHandover(unit.id, token);
+                          const url = window.URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `NOC_Handover_Unit_${unit.unit}.pdf`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          window.URL.revokeObjectURL(url);
+                          toast.success('NOC downloaded successfully');
+                        } catch (error) {
+                          console.error('Download error:', error);
+                          toast.error('Failed to download NOC');
+                        }
+                      }}
+                      className="bg-purple-50 border-purple-300 hover:bg-purple-100"
+                    >
+                      <Download className="w-3 h-3 mr-1" />
+                      Download NOC
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -774,118 +888,256 @@ export default function UnitDetailsPage() {
                       {handoverStatus?.has_mortgage ? "Has Mortgage ✓" : "No Mortgage"}
                     </Button>
                   </div>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  {handoverStatus && Array.isArray(handoverStatus.requirements) ? (
-                    <div className="space-y-4">
-                      {handoverStatus.requirements.map((req) => {
-                        const associatedFiles = unit.attachments?.filter(att => att.type === req.type) || [];
-                        
-                        return (
-                          <div
-                            key={req.type}
-                            className={`p-4 border-2 rounded-lg transition-all ${
-                              req.uploaded 
-                                ? 'border-green-300 bg-green-50' 
-                                : 'border-gray-200 hover:border-blue-300'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex items-start gap-3 flex-1">
-                                <div className="mt-1">
-                                  {req.uploaded ? (
-                                    <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
-                                      <Check className="w-4 h-4 text-white" />
-                                    </div>
-                                  ) : (
-                                    <div className="w-6 h-6 rounded-full border-2 border-gray-300" />
-                                  )}
-                                </div>
-                                <div className="flex-1">
-                                  <h4 className={`font-medium ${req.uploaded ? 'text-green-800' : 'text-gray-900'}`}>
-                                    {req.label}
-                                  </h4>
-                                  
-                                  {associatedFiles.length > 0 && (
-                                    <div className="mt-3 space-y-2">
-                                      {associatedFiles.map((file) => {
-                                        const truncatedName = file.filename.length > 25 
-                                          ? file.filename.substring(0,18) + '...' 
-                                          : file.filename;
-                                        
-                                        return (
-                                          <div key={file.id} className="flex items-center gap-2 text-xs bg-white p-2 rounded border border-gray-200">
-                                            <FileText className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                                            <span 
-                                              className="flex-1 font-medium" 
-                                              title={file.filename}
-                                            >
-                                              {truncatedName}
-                                            </span>
-                                            <Button 
-                                              variant="ghost" 
-                                              size="icon"
-                                              className="h-6 w-6"
-                                              onClick={() => setViewingDocument(file)}
-                                              title="View document"
-                                            >
-                                              <Eye className="w-3 h-3" />
-                                            </Button>
-                                            <Button 
-                                              variant="ghost" 
-                                              size="icon"
-                                              className="h-6 w-6"
-                                              onClick={() => window.open(file.full_url, '_blank')}
-                                              title="Download"
-                                            >
-                                              <Download className="w-3 h-3" />
-                                            </Button>
-                                            <Button 
-                                              variant="ghost" 
-                                              size="icon"
-                                              className="h-6 w-6 text-red-600 hover:text-red-700"
-                                              onClick={() => handleDeleteAttachment(file.id, file.filename)}
-                                              title="Delete"
-                                            >
-                                              <Trash2 className="w-3 h-3" />
-                                            </Button>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              {!req.uploaded && req.type !== 'payment_proof' && (
-                                <div>
-                                  <Input
-                                    type="file"
-                                    accept=".pdf,.jpg,.jpeg,.png"
-                                    className="hidden"
-                                    id={`upload-${req.type}`}
-                                    onChange={(e) => handleHandoverUpload(req.type, e)}
-                                  />
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={uploadingHandover[req.type]}
-                                    onClick={() => document.getElementById(`upload-${req.type}`)?.click()}
-                                  >
-                                    {uploadingHandover[req.type] ? (
-                                      "Uploading..."
+                  {handoverStatus ? (
+                    <div className="space-y-6">
+                      {/* Buyer Requirements Section */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className={`w-3 h-3 rounded-full ${handoverStatus.buyer_ready ? 'bg-green-500' : 'bg-orange-400'}`} />
+                          <h3 className="font-semibold text-lg">Buyer Requirements</h3>
+                        </div>
+                        {handoverStatus.buyer_requirements?.map((req) => {
+                          const associatedFiles = unit.attachments?.filter(att => att.type === req.type) || [];
+                          
+                          return (
+                            <div
+                              key={req.type}
+                              className={`p-4 border-2 rounded-lg transition-all ${
+                                req.uploaded 
+                                  ? 'border-green-300 bg-green-50' 
+                                  : 'border-gray-200 hover:border-blue-300'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-start gap-3 flex-1">
+                                  <div className="mt-1">
+                                    {req.uploaded ? (
+                                      <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                                        <Check className="w-4 h-4 text-white" />
+                                      </div>
                                     ) : (
-                                      <>
-                                        <Upload className="w-3 h-3 mr-1" />
-                                        Upload
-                                      </>
+                                      <div className="w-6 h-6 rounded-full border-2 border-gray-300" />
                                     )}
-                                  </Button>
+                                  </div>
+                                  <div className="flex-1">
+                                    <h4 className={`font-medium ${req.uploaded ? 'text-green-800' : 'text-gray-900'}`}>
+                                      {req.label}
+                                    </h4>
+                                    
+                                    {associatedFiles.length > 0 && (
+                                      <div className="mt-3 space-y-2">
+                                        {associatedFiles.map((file) => {
+                                          const truncatedName = file.filename.length > 25 
+                                            ? file.filename.substring(0,18) + '...' 
+                                            : file.filename;
+                                          
+                                          return (
+                                            <div key={file.id} className="flex items-center gap-2 text-xs bg-white p-2 rounded border border-gray-200">
+                                              <FileText className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                                              <span 
+                                                className="flex-1 font-medium" 
+                                                title={file.filename}
+                                              >
+                                                {truncatedName}
+                                              </span>
+                                              <Button 
+                                                variant="ghost" 
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => setViewingDocument(file)}
+                                                title="View document"
+                                              >
+                                                <Eye className="w-3 h-3" />
+                                              </Button>
+                                              <Button 
+                                                variant="ghost" 
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => window.open(file.full_url, '_blank')}
+                                                title="Download"
+                                              >
+                                                <Download className="w-3 h-3" />
+                                              </Button>
+                                              <Button 
+                                                variant="ghost" 
+                                                size="icon"
+                                                className="h-6 w-6 text-red-600 hover:text-red-700"
+                                                onClick={() => handleDeleteAttachment(file.id, file.filename)}
+                                                title="Delete"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </Button>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              )}
+                                {!req.uploaded && req.type !== 'payment_proof' && (
+                                  <div>
+                                    <Input
+                                      type="file"
+                                      accept=".pdf,.jpg,.jpeg,.png"
+                                      className="hidden"
+                                      id={`upload-${req.type}`}
+                                      onChange={(e) => handleHandoverUpload(req.type, e)}
+                                    />
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={uploadingHandover[req.type]}
+                                      onClick={() => document.getElementById(`upload-${req.type}`)?.click()}
+                                    >
+                                      {uploadingHandover[req.type] ? (
+                                        "Uploading..."
+                                      ) : (
+                                        <>
+                                          <Upload className="w-3 h-3 mr-1" />
+                                          Upload
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
+
+                      {/* Send to Developer Button */}
+                      {handoverStatus.buyer_ready && !handoverStatus.developer_ready && (
+                        <div className="pt-4">
+                          <Button
+                            onClick={handleSendToDeveloper}
+                            disabled={sendingToDeveloper}
+                            className="w-full bg-blue-600 hover:bg-blue-700"
+                          >
+                            <Send className="w-4 h-4 mr-2" />
+                            {sendingToDeveloper ? "Sending..." : "Send Requirements to Developer"}
+                          </Button>
+                          <p className="text-xs text-gray-600 text-center mt-2">
+                            This will send all buyer documents to the developer for review and signing
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Developer Requirements Section */}
+                      <div className="space-y-3 pt-4 border-t-2">
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className={`w-3 h-3 rounded-full ${handoverStatus.developer_ready ? 'bg-green-500' : 'bg-orange-400'}`} />
+                          <h3 className="font-semibold text-lg">Developer Requirements</h3>
+                        </div>
+                        {handoverStatus.developer_requirements?.map((req) => {
+                          const associatedFiles = unit.attachments?.filter(att => att.type === req.type) || [];
+                          
+                          return (
+                            <div
+                              key={req.type}
+                              className={`p-4 border-2 rounded-lg transition-all ${
+                                req.uploaded 
+                                  ? 'border-green-300 bg-green-50' 
+                                  : 'border-gray-200 hover:border-blue-300'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-start gap-3 flex-1">
+                                  <div className="mt-1">
+                                    {req.uploaded ? (
+                                      <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                                        <Check className="w-4 h-4 text-white" />
+                                      </div>
+                                    ) : (
+                                      <div className="w-6 h-6 rounded-full border-2 border-gray-300" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1">
+                                    <h4 className={`font-medium ${req.uploaded ? 'text-green-800' : 'text-gray-900'}`}>
+                                      {req.label}
+                                    </h4>
+                                    
+                                    {associatedFiles.length > 0 && (
+                                      <div className="mt-3 space-y-2">
+                                        {associatedFiles.map((file) => {
+                                          const truncatedName = file.filename.length > 25 
+                                            ? file.filename.substring(0,18) + '...' 
+                                            : file.filename;
+                                          
+                                          return (
+                                            <div key={file.id} className="flex items-center gap-2 text-xs bg-white p-2 rounded border border-gray-200">
+                                              <FileText className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                                              <span 
+                                                className="flex-1 font-medium" 
+                                                title={file.filename}
+                                              >
+                                                {truncatedName}
+                                              </span>
+                                              <Button 
+                                                variant="ghost" 
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => setViewingDocument(file)}
+                                                title="View document"
+                                              >
+                                                <Eye className="w-3 h-3" />
+                                              </Button>
+                                              <Button 
+                                                variant="ghost" 
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => window.open(file.full_url, '_blank')}
+                                                title="Download"
+                                              >
+                                                <Download className="w-3 h-3" />
+                                              </Button>
+                                              <Button 
+                                                variant="ghost" 
+                                                size="icon"
+                                                className="h-6 w-6 text-red-600 hover:text-red-700"
+                                                onClick={() => handleDeleteAttachment(file.id, file.filename)}
+                                                title="Delete"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </Button>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                {!req.uploaded && (
+                                  <div>
+                                    <Input
+                                      type="file"
+                                      accept=".pdf,.jpg,.jpeg,.png"
+                                      className="hidden"
+                                      id={`upload-${req.type}`}
+                                      onChange={(e) => handleHandoverUpload(req.type, e)}
+                                    />
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={uploadingHandover[req.type]}
+                                      onClick={() => document.getElementById(`upload-${req.type}`)?.click()}
+                                    >
+                                      {uploadingHandover[req.type] ? (
+                                        "Uploading..."
+                                      ) : (
+                                        <>
+                                          <Upload className="w-3 h-3 mr-1" />
+                                          Upload
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
                     <p className="text-gray-500 text-center py-4">Loading requirements...</p>
@@ -933,7 +1185,7 @@ export default function UnitDetailsPage() {
                                 variant="ghost"
                                 size="icon"
                                 className="flex-shrink-0 h-8 w-8"
-                                onClick={() => window.open(`http://localhost:8000/api/storage/${completedBooking.handover_checklist}`, '_blank')}
+                                onClick={() => completedBooking.handover_checklist && window.open(getStorageUrl(completedBooking.handover_checklist), '_blank')}
                               >
                                 <Eye className="w-4 h-4" />
                               </Button>
@@ -942,10 +1194,12 @@ export default function UnitDetailsPage() {
                                 size="icon"
                                 className="flex-shrink-0 h-8 w-8"
                                 onClick={() => {
-                                  const link = document.createElement('a');
-                                  link.href = `http://localhost:8000/api/storage/${completedBooking.handover_checklist}`;
-                                  link.download = `unit_${unit.unit}_handover_checklist.pdf`;
-                                  link.click();
+                                  if (completedBooking.handover_checklist) {
+                                    const link = document.createElement('a');
+                                    link.href = getStorageUrl(completedBooking.handover_checklist);
+                                    link.download = `unit_${unit.unit}_handover_checklist.pdf`;
+                                    link.click();
+                                  }
                                 }}
                               >
                                 <Download className="w-4 h-4" />
@@ -971,7 +1225,7 @@ export default function UnitDetailsPage() {
                                 variant="ghost"
                                 size="icon"
                                 className="flex-shrink-0 h-8 w-8"
-                                onClick={() => window.open(`http://localhost:8000/api/storage/${completedBooking.handover_declaration}`, '_blank')}
+                                onClick={() => completedBooking.handover_declaration && window.open(getStorageUrl(completedBooking.handover_declaration), '_blank')}
                               >
                                 <Eye className="w-4 h-4" />
                               </Button>
@@ -980,10 +1234,12 @@ export default function UnitDetailsPage() {
                                 size="icon"
                                 className="flex-shrink-0 h-8 w-8"
                                 onClick={() => {
-                                  const link = document.createElement('a');
-                                  link.href = `http://localhost:8000/api/storage/${completedBooking.handover_declaration}`;
-                                  link.download = `unit_${unit.unit}_declaration.pdf`;
-                                  link.click();
+                                  if (completedBooking.handover_declaration) {
+                                    const link = document.createElement('a');
+                                    link.href = getStorageUrl(completedBooking.handover_declaration);
+                                    link.download = `unit_${unit.unit}_declaration.pdf`;
+                                    link.click();
+                                  }
                                 }}
                               >
                                 <Download className="w-4 h-4" />
@@ -999,7 +1255,7 @@ export default function UnitDetailsPage() {
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 flex-1">
                               <img 
-                                src={`http://localhost:8000/api/storage/${completedBooking.handover_photo}`}
+                                src={getStorageUrl(completedBooking.handover_photo)}
                                 alt="Handover photo"
                                 className="w-16 h-16 object-cover rounded flex-shrink-0"
                               />
@@ -1013,7 +1269,7 @@ export default function UnitDetailsPage() {
                                 variant="ghost"
                                 size="icon"
                                 className="flex-shrink-0 h-8 w-8"
-                                onClick={() => window.open(`http://localhost:8000/api/storage/${completedBooking.handover_photo}`, '_blank')}
+                                onClick={() => completedBooking.handover_photo && window.open(getStorageUrl(completedBooking.handover_photo), '_blank')}
                               >
                                 <Eye className="w-4 h-4" />
                               </Button>
@@ -1022,10 +1278,12 @@ export default function UnitDetailsPage() {
                                 size="icon"
                                 className="flex-shrink-0 h-8 w-8"
                                 onClick={() => {
-                                  const link = document.createElement('a');
-                                  link.href = `http://localhost:8000/api/storage/${completedBooking.handover_photo}`;
-                                  link.download = `unit_${unit.unit}_handover_photo.jpg`;
-                                  link.click();
+                                  if (completedBooking.handover_photo) {
+                                    const link = document.createElement('a');
+                                    link.href = getStorageUrl(completedBooking.handover_photo);
+                                    link.download = `unit_${unit.unit}_handover_photo.jpg`;
+                                    link.click();
+                                  }
                                 }}
                               >
                                 <Download className="w-4 h-4" />
@@ -1041,7 +1299,7 @@ export default function UnitDetailsPage() {
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 flex-1">
                               <img 
-                                src={`http://localhost:8000/api/storage/${completedBooking.client_signature}`}
+                                src={getStorageUrl(completedBooking.client_signature)}
                                 alt="Client signature"
                                 className="w-24 h-16 object-contain bg-white border rounded flex-shrink-0"
                               />
@@ -1055,7 +1313,7 @@ export default function UnitDetailsPage() {
                                 variant="ghost"
                                 size="icon"
                                 className="flex-shrink-0 h-8 w-8"
-                                onClick={() => window.open(`http://localhost:8000/api/storage/${completedBooking.client_signature}`, '_blank')}
+                                onClick={() => completedBooking.client_signature && window.open(getStorageUrl(completedBooking.client_signature), '_blank')}
                               >
                                 <Eye className="w-4 h-4" />
                               </Button>
@@ -1064,10 +1322,12 @@ export default function UnitDetailsPage() {
                                 size="icon"
                                 className="flex-shrink-0 h-8 w-8"
                                 onClick={() => {
-                                  const link = document.createElement('a');
-                                  link.href = `http://localhost:8000/api/storage/${completedBooking.client_signature}`;
-                                  link.download = `unit_${unit.unit}_signature.png`;
-                                  link.click();
+                                  if (completedBooking.client_signature) {
+                                    const link = document.createElement('a');
+                                    link.href = getStorageUrl(completedBooking.client_signature);
+                                    link.download = `unit_${unit.unit}_signature.png`;
+                                    link.click();
+                                  }
                                 }}
                               >
                                 <Download className="w-4 h-4" />
@@ -1414,9 +1674,11 @@ export default function UnitDetailsPage() {
                 <Paperclip className="w-4 h-4" />
                 Attachments
               </Label>
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 space-y-4">
+                {/* SOA Attachments */}
                 {soaAttachments.length > 0 ? (
                   <div className="space-y-2">
+                    <Label className="text-sm font-medium">Statement of Account</Label>
                     {soaAttachments.map((attachment) => (
                       <div key={attachment.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-300">
                         <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
@@ -1438,7 +1700,7 @@ export default function UnitDetailsPage() {
                       </div>
                     ))}
                     
-                    <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+                    <div className="p-3 bg-green-50 border border-green-200 rounded">
                       <p className="text-xs text-green-800">
                         &#10003; SOA document{soaAttachments.length > 1 ? 's' : ''} will be attached to this email
                       </p>
@@ -1451,6 +1713,82 @@ export default function UnitDetailsPage() {
                     </p>
                   </div>
                 )}
+
+                {/* Service Charge Acknowledgement */}
+                <div className="border-t border-gray-200 pt-4">
+                  <Label className="text-sm font-medium mb-2 block">Service Charge Acknowledgement</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start gap-2 hover:bg-orange-50 hover:border-orange-500"
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem("authToken");
+                        if (!token) {
+                          toast.error("Authentication required");
+                          return;
+                        }
+                        const blob = await downloadServiceChargeAcknowledgement(unit.id, token);
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = `Service_Charge_Acknowledgement_${unit.unit}.pdf`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(url);
+                        toast.success("PDF downloaded successfully!");
+                      } catch (error) {
+                        toast.error("Failed to download PDF");
+                        console.error(error);
+                      }
+                    }}
+                  >
+                    <Download className="w-4 h-4 text-orange-600" />
+                    <span className="text-sm">Download Service Charge Acknowledgement (Pre-filled)</span>
+                  </Button>
+                  <p className="text-xs text-gray-500 mt-1">
+                    This template is included in the initial handover notice and auto-filled with owner information.
+                  </p>
+                </div>
+
+                {/* Other Handover Notice Attachments */}
+                <div className="border-t border-gray-200 pt-4">
+                  <Label className="text-sm font-medium mb-2 block">Additional Resources</Label>
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start gap-2 hover:bg-blue-50 hover:border-blue-500"
+                      onClick={() => {
+                        const link = document.createElement("a");
+                        link.href = `${API_BASE_URL.replace('/api', '')}/storage/handover-notice-attachments/viera-residences/Utilities Registration Guide.pdf`;
+                        link.target = "_blank";
+                        link.click();
+                      }}
+                    >
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm">Utilities Registration Guide</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start gap-2 hover:bg-blue-50 hover:border-blue-500"
+                      onClick={() => {
+                        const link = document.createElement("a");
+                        link.href = `${API_BASE_URL.replace('/api', '')}/storage/handover-notice-attachments/viera-residences/Viera Residences - Escrow Acc.pdf`;
+                        link.target = "_blank";
+                        link.click();
+                      }}
+                    >
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm">Viera Residences - Escrow Account</span>
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    &#9432; These documents are included in the handover notice email
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -1470,6 +1808,143 @@ export default function UnitDetailsPage() {
             >
               <Mail className="w-4 h-4 mr-2" />
               {sendingHandoverEmail ? "Sending..." : "Send Email Now"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Developer Requirements Preview Dialog */}
+      <Dialog open={showDeveloperPreview} onOpenChange={setShowDeveloperPreview}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-blue-600" />
+              Preview Developer Email
+            </DialogTitle>
+            <DialogDescription>
+              Review the email and attachments before sending to the developer
+            </DialogDescription>
+          </DialogHeader>
+
+          {developerPreview && (
+            <div className="flex-1 overflow-auto space-y-4 py-4">
+              {/* Email Details */}
+              <div className="space-y-3">
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="font-medium text-gray-700">To:</p>
+                      <p className="text-gray-900">{developerPreview.recipient_email}</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">Subject:</p>
+                      <p className="text-gray-900">{developerPreview.subject}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Unit Information */}
+                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  <h3 className="font-semibold text-sm mb-2">Unit Information</h3>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-600">Unit:</span>
+                      <span className="ml-2 font-medium">{developerPreview.unit.unit}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Project:</span>
+                      <span className="ml-2 font-medium">{developerPreview.unit.project_name}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Owner Information */}
+                <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                  <h3 className="font-semibold text-sm mb-2">Owner Information</h3>
+                  <div className="space-y-1 text-sm">
+                    <div>
+                      <span className="text-gray-600">Name:</span>
+                      <span className="ml-2 font-medium">{developerPreview.owner.full_name}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Email:</span>
+                      <span className="ml-2 font-medium">{developerPreview.owner.email}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Phone:</span>
+                      <span className="ml-2 font-medium">{developerPreview.owner.mobile_number}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Attachments */}
+                <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                    <Paperclip className="w-4 h-4" />
+                    Attachments ({developerPreview.documents.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {developerPreview.documents.map((doc: any) => {
+                      const typeLabels: {[key: string]: string} = {
+                        payment_proof: '100% SOA Receipt',
+                        ac_connection: 'AC Connection',
+                        dewa_connection: 'DEWA Connection',
+                        service_charge_ack_buyer: 'Service Charge Acknowledgement (Buyer Signed)',
+                        bank_noc: 'Bank NOC'
+                      };
+                      
+                      return (
+                        <div key={doc.id} className="flex items-center justify-between bg-white p-3 rounded border border-purple-300">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <FileText className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{typeLabels[doc.type] || doc.type}</p>
+                              <p className="text-xs text-gray-500 truncate">{doc.filename}</p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="flex-shrink-0"
+                            onClick={() => window.open(doc.full_url, '_blank')}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Next Steps Info */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <h3 className="font-semibold text-sm mb-2">What happens next?</h3>
+                  <ol className="text-xs text-gray-700 space-y-1 ml-4 list-decimal">
+                    <li>Developer will receive an email with all buyer documents</li>
+                    <li>Developer reviews documents and signs required forms</li>
+                    <li>Developer uploads signed Service Charge Ack and NOC</li>
+                    <li>System notifies you when developer requirements are complete</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowDeveloperPreview(false)}
+              disabled={sendingToDeveloper}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmSendToDeveloper}
+              disabled={sendingToDeveloper}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              {sendingToDeveloper ? "Sending..." : "Send to Developer"}
             </Button>
           </DialogFooter>
         </DialogContent>

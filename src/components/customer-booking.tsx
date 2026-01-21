@@ -36,6 +36,7 @@ interface CustomerBookingProps {
   eligibleUnits: EligibleUnit[];
   selectedUnitId: number | null;
   onSelectUnit: (unitId: number | null) => void;
+  isFromBookingLink?: boolean;
 }
 
 const TIME_SLOTS = [
@@ -43,7 +44,7 @@ const TIME_SLOTS = [
   "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"
 ];
 
-export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking, currentUser, authToken, eligibleUnits = [], selectedUnitId, onSelectUnit }: CustomerBookingProps) {
+export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking, currentUser, authToken, eligibleUnits = [], selectedUnitId, onSelectUnit, isFromBookingLink = false }: CustomerBookingProps) {
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [selectedTime, setSelectedTime] = useState<string>("");
   const [showThankYou, setShowThankYou] = useState(false);
@@ -240,6 +241,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
       </div>
 
       {/* Property Details */}
+      {!isFromBookingLink && (
       <div>
         <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-4">Your Units</h3>
         <div className="space-y-4">
@@ -399,6 +401,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           </div>
         </div>
       </div>
+      )}
 
       {/* Footer Note */}
       <div className="mt-8 pt-6 border-t border-white/10">
@@ -458,7 +461,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           </div>
           
           {/* Unit Selector Cards - Mobile Only */}
-          {currentUser?.units && currentUser.units.length > 0 && (
+          {!isFromBookingLink && currentUser?.units && currentUser.units.length > 0 && (
             <div className="w-full overflow-x-auto">
               <div className="flex gap-2 pb-2">
                 {currentUser.units.map((unit) => {

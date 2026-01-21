@@ -1,9 +1,8 @@
 /**
  * API Service for Backend Communication
- * Connects to Laravel backend at http://localhost:8000/api
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+import { API_BASE_URL } from '@/config/api';
 
 export interface Property {
   id: number;
@@ -92,6 +91,7 @@ export interface User {
   payment_status: "pending" | "partial" | "fully_paid";
   payment_date: string | null;
   mobile_number: string;
+  passport_number?: string;
   remarks?: string;
   units?: Unit[];
   attachments?: UserAttachment[];
@@ -311,6 +311,140 @@ export async function getUserBookings(token: string): Promise<any[]> {
 }
 
 /**
+ * Get a specific booking by ID with full details
+ */
+export async function getBooking(bookingId: number, token: string): Promise<any> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch booking");
+    }
+
+    const data = await response.json();
+    return data.booking || data.data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Save declaration signatures incrementally
+ */
+export async function saveDeclarationSignatures(
+  bookingId: number,
+  part: number,
+  signatures: any[],
+  token: string
+): Promise<any> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/save-declaration-signatures`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ part, signatures }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to save signatures");
+    }
+
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Generate declaration PDF for a booking
+ */
+export async function generateDeclarationPDF(
+  bookingId: number, 
+  token: string,
+  signatureName?: string,
+  signatureImage?: string,
+  signaturesData?: any
+): Promise<Blob> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/generate-declaration`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        signature_name: signatureName,
+        signature_image: signatureImage,
+        signatures_data: signaturesData
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate declaration PDF");
+    }
+
+    const data = await response.json();
+    
+    // Convert base64 to Blob
+    const binaryString = atob(data.pdf_content);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    return new Blob([bytes], { type: "application/pdf" });
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Generate handover checklist PDF
+ */
+export async function generateHandoverChecklistPDF(
+  bookingId: number,
+  token: string,
+  formData: any
+): Promise<Blob> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/generate-handover-checklist`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(formData)
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate handover checklist PDF");
+    }
+
+    const data = await response.json();
+    
+    // Convert base64 to Blob
+    const binaryString = atob(data.pdf_content);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    return new Blob([bytes], { type: "application/pdf" });
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Cancel a booking
  */
 export async function cancelBooking(bookingId: number, token: string): Promise<void> {
@@ -468,6 +602,139 @@ export async function completeHandover(
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.message || "Failed to complete handover");
+    }
+
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Get snagging defects for a booking
+ */
+export async function getSnaggingDefects(
+  bookingId: number,
+  token: string
+): Promise<any[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/snagging-defects`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to fetch snagging defects");
+    }
+
+    const data = await response.json();
+    return data.defects || [];
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Create a snagging defect
+ */
+export async function createSnaggingDefect(
+  bookingId: number,
+  imageFile: File | null,
+  description: string,
+  location: string,
+  agreedRemediationAction: string,
+  token: string
+): Promise<any> {
+  try {
+    const formData = new FormData();
+    if (imageFile) {
+      formData.append("image", imageFile);
+    }
+    formData.append("description", description);
+    formData.append("location", location);
+    formData.append("agreed_remediation_action", agreedRemediationAction);
+
+    const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/snagging-defects`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to create snagging defect");
+    }
+
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Update a snagging defect
+ */
+export async function updateSnaggingDefect(
+  bookingId: number,
+  defectId: number,
+  description: string,
+  location: string,
+  agreedRemediationAction: string,
+  token: string,
+  isRemediated?: boolean
+): Promise<any> {
+  try {
+    const body: any = { description, location, agreed_remediation_action: agreedRemediationAction };
+    if (isRemediated !== undefined) {
+      body.is_remediated = isRemediated;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/snagging-defects/${defectId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to update snagging defect");
+    }
+
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Delete a snagging defect
+ */
+export async function deleteSnaggingDefect(
+  bookingId: number,
+  defectId: number,
+  token: string
+): Promise<any> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/snagging-defects/${defectId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to delete snagging defect");
     }
 
     return await response.json();
@@ -955,6 +1222,7 @@ export interface CreateUserWithUnitRequest {
   full_name: string;
   email: string;
   mobile_number?: string;
+  passport_number?: string;
   is_primary?: boolean;
 }
 
@@ -1055,3 +1323,46 @@ export async function bulkUploadUsers(
   }
 }
 
+export async function downloadServiceChargeAcknowledgement(
+  unitId: number,
+  token: string
+): Promise<Blob> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/units/${unitId}/service-charge-acknowledgement`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate PDF");
+    }
+
+    return await response.blob();
+  } catch (error) {
+    throw error;
+  }
+}
+
+export async function downloadNOCHandover(
+  unitId: number,
+  token: string
+): Promise<Blob> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/units/${unitId}/noc-handover`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate NOC PDF");
+    }
+
+    return await response.blob();
+  } catch (error) {
+    throw error;
+  }
+}

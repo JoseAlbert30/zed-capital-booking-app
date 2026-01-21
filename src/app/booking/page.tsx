@@ -102,8 +102,12 @@ export default function BookingPage() {
         localStorage.setItem('userEmail', data.user.email);
         localStorage.setItem('isAdmin', 'false');
         
-        // Redirect to home page after successful authentication
-        router.push('/');
+        // Redirect to dashboard with unit_id parameter if specified
+        if (unitIdParam) {
+          router.push(`/dashboard?unit_id=${unitIdParam}`);
+        } else {
+          router.push('/');
+        }
         
       } catch (err: any) {
         console.error("Magic link validation error:", err);

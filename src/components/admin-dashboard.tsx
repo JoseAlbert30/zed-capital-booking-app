@@ -10,7 +10,7 @@ import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Calendar } from "./ui/calendar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
-import { User, sendSOAEmail, cancelBooking, updateBooking, createUnit, bulkUploadUnits, createUserWithUnit, bulkUploadUsers, getAllUnits, completeHandover, getProjectTemplates, uploadHandoverFile, deleteHandoverFile } from "@/lib/api";
+import { User, sendSOAEmail, cancelBooking, updateBooking, createUnit, bulkUploadUnits, createUserWithUnit, bulkUploadUsers, getAllUnits, completeHandover, getProjectTemplates, uploadHandoverFile, deleteHandoverFile, getSnaggingDefects, createSnaggingDefect, updateSnaggingDefect, deleteSnaggingDefect, downloadServiceChargeAcknowledgement } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Input } from "./ui/input";
 import { toast } from "sonner";
@@ -32,6 +32,14 @@ interface Booking {
   handover_declaration_url?: string | null;
   handover_photo_url?: string | null;
   client_signature_url?: string | null;
+  snagging_defects?: Array<{
+    id: number;
+    description: string;
+    location: string;
+    agreed_remediation_action: string;
+    is_remediated: boolean;
+    photo_path?: string;
+  }>;
   user?: {
     id: number;
     full_name: string;
@@ -91,8 +99,6 @@ export function AdminDashboard({
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [newBookingStatus, setNewBookingStatus] = useState<Booking["status"]>("confirmed");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [viewingCredentials, setViewingCredentials] = useState<User | null>(null);
   const [rebookingBooking, setRebookingBooking] = useState<Booking | null>(null);
   const [rebookDate, setRebookDate] = useState<Date>();
   const [rebookTime, setRebookTime] = useState<string>("");
@@ -132,6 +138,7 @@ export function AdminDashboard({
     email: "",
     unit_number: "",
     mobile_number: "",
+    passport_number: "",
     is_primary: true,
   });
   const [allUnits, setAllUnits] = useState<any[]>([]);
@@ -149,28 +156,39 @@ export function AdminDashboard({
   const [bookingDateRange, setBookingDateRange] = useState<{ from: Date | undefined, to: Date | undefined }>({ from: undefined, to: undefined });
 
   // Handover completion states
-  const [handoverDialogOpen, setHandoverDialogOpen] = useState(false);
   const [handoverBooking, setHandoverBooking] = useState<Booking | null>(null);
-  const [handoverChecklistTemplate, setHandoverChecklistTemplate] = useState<string | null>(null);
-  const [declarationTemplate, setDeclarationTemplate] = useState<string | null>(null);
-  const [annotatedChecklist, setAnnotatedChecklist] = useState<File | null>(null);
-  const [annotatedDeclaration, setAnnotatedDeclaration] = useState<File | null>(null);
-  const [handoverPhoto, setHandoverPhoto] = useState<File | null>(null);
-  const [handoverChecklistPreview, setHandoverChecklistPreview] = useState<string | null>(null);
-  const [handoverDeclarationPreview, setHandoverDeclarationPreview] = useState<string | null>(null);
-  const [handoverPhotoPreview, setHandoverPhotoPreview] = useState<string | null>(null);
-  const [clientSignature, setClientSignature] = useState<File | null>(null);
-  const [clientSignaturePreview, setClientSignaturePreview] = useState<string | null>(null);
-  const [isDrawingSignature, setIsDrawingSignature] = useState(false);
-  const [completingHandover, setCompletingHandover] = useState(false);
-  const [showCamera, setShowCamera] = useState(false);
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Snagging defects state
+  const [snaggingDefects, setSnaggingDefects] = useState<Array<{ 
+    id: string; 
+    serverId?: number;
+    image: File | null; 
+    imagePreview: string | null; 
+    description: string;
+    location: string;
+    agreedRemediationAction: string;
+    is_remediated?: boolean;
+  }>>([]);
+  const [expandedDefects, setExpandedDefects] = useState<Set<string>>(new Set());
+  const [showSnaggingCamera, setShowSnaggingCamera] = useState(false);
+  const [activeSnaggingDefectId, setActiveSnaggingDefectId] = useState<string | null>(null);
+  const snaggingVideoRef = useRef<HTMLVideoElement>(null);
+  const snaggingCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Celebration dialog state (for testing)
   const [showCelebration, setShowCelebration] = useState(false);
+
+  // Bulk SOA upload states
+  const [bulkSOADialogOpen, setBulkSOADialogOpen] = useState(false);
+  const [soaFiles, setSOAFiles] = useState<File[]>([]);
+  const [uploadingSOAs, setUploadingSOAs] = useState(false);
+
+  // Bulk send handover states
+  const [bulkHandoverDialogOpen, setBulkHandoverDialogOpen] = useState(false);
+  const [selectedUnitsForHandover, setSelectedUnitsForHandover] = useState<Set<number>>(new Set());
+  const [sendingHandovers, setSendingHandovers] = useState(false);
 
   // Helper function to get property ID by project name
   const getPropertyIdByName = (projectName: string): number | null => {
@@ -246,6 +264,21 @@ export function AdminDashboard({
       fetchAllUnitsForListing();
     }
   }, [activeTab, authToken, unitSOAStatus, unitPaymentStatus, unitHandoverStatus, unitHandoverRequirements, unitBookingStatus, bookingDateRange]);
+
+  // Refresh units when page becomes visible (e.g., when navigating back from unit detail page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && (activeTab === "units" || activeTab === "users") && authToken) {
+        console.log('Page visible, refreshing units...');
+        fetchAllUnitsForListing();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [activeTab, authToken]);
 
   // Pagination for users
   const displayedUsers = users.slice(0, displayedUsersCount);
@@ -522,68 +555,6 @@ export function AdminDashboard({
     }
   };
 
-  const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
-  const startCamera = async () => {
-    setShowCamera(true);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user', width: 1280, height: 720 } 
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-    } catch (err) {
-      console.error("Error accessing camera:", err);
-      toast.error("Could not access camera. Please check permissions.");
-      setShowCamera(false);
-    }
-  };
-
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-      setShowCamera(false);
-    }
-  };
-
-  const capturePhoto = async () => {
-    if (videoRef.current && canvasRef.current && handoverBooking) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0);
-        canvas.toBlob(async (blob) => {
-          if (blob) {
-            const file = new File([blob], `handover-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-            try {
-              // Upload immediately
-              await uploadHandoverFile(Number(handoverBooking.id), 'handover_photo', file, authToken);
-              setHandoverPhoto(file);
-              setHandoverPhotoPreview(canvas.toDataURL('image/jpeg'));
-              stopCamera();
-              toast.success("Photo captured and uploaded!");
-            } catch (error) {
-              console.error("Upload error:", error);
-              toast.error("Failed to upload photo");
-              stopCamera();
-            }
-          }
-        }, 'image/jpeg', 0.9);
-      }
-    }
-  };
-
   const handleRebook = async () => {
     if (rebookingBooking && rebookDate && rebookTime) {
       setRebookingInProgress(true);
@@ -617,6 +588,213 @@ export function AdminDashboard({
         toast.error(error.message || 'Failed to reschedule booking');
       } finally {
         setRebookingInProgress(false);
+      }
+    }
+  };
+
+  // Snagging defect functions
+  const addSnaggingDefect = () => {
+    const newDefect = {
+      id: `defect-${Date.now()}`,
+      image: null,
+      imagePreview: null,
+      description: '',
+      location: '',
+      agreedRemediationAction: ''
+    };
+    setSnaggingDefects([...snaggingDefects, newDefect]);
+    // Expand the new defect by default
+    setExpandedDefects(prev => new Set([...prev, newDefect.id]));
+  };
+
+  const toggleDefectExpanded = (defectId: string) => {
+    setExpandedDefects(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(defectId)) {
+        newSet.delete(defectId);
+      } else {
+        newSet.add(defectId);
+      }
+      return newSet;
+    });
+  };
+
+  const removeSnaggingDefect = async (defectId: string) => {
+    const defect = snaggingDefects.find(d => d.id === defectId);
+    
+    // If it has a server ID, delete from server
+    if (defect?.serverId && handoverBooking) {
+      try {
+        await deleteSnaggingDefect(Number(handoverBooking.id), defect.serverId, authToken);
+        toast.success("Defect deleted");
+      } catch (error) {
+        console.error("Failed to delete defect:", error);
+        toast.error("Failed to delete defect");
+        return;
+      }
+    }
+    
+    setSnaggingDefects(snaggingDefects.filter(d => d.id !== defectId));
+  };
+
+  const updateSnaggingDefectDescription = (defectId: string, description: string) => {
+    setSnaggingDefects(snaggingDefects.map(d => 
+      d.id === defectId ? { ...d, description } : d
+    ));
+  };
+
+  const updateSnaggingDefectLocation = (defectId: string, location: string) => {
+    setSnaggingDefects(snaggingDefects.map(d => 
+      d.id === defectId ? { ...d, location } : d
+    ));
+  };
+
+  const updateSnaggingDefectRemediation = (defectId: string, agreedRemediationAction: string) => {
+    setSnaggingDefects(snaggingDefects.map(d => 
+      d.id === defectId ? { ...d, agreedRemediationAction } : d
+    ));
+  };
+
+  const updateSnaggingDefectImage = async (defectId: string, file: File | null, preview: string | null) => {
+    if (!file || !handoverBooking) {
+      setSnaggingDefects(snaggingDefects.map(d => 
+        d.id === defectId ? { ...d, image: file, imagePreview: preview } : d
+      ));
+      return;
+    }
+
+    // Update local state first
+    setSnaggingDefects(snaggingDefects.map(d => 
+      d.id === defectId ? { ...d, image: file, imagePreview: preview } : d
+    ));
+
+    // Get the defect to save
+    const defect = snaggingDefects.find(d => d.id === defectId);
+    if (!defect) return;
+
+    // Save to server immediately
+    try {
+      const result = await createSnaggingDefect(
+        Number(handoverBooking.id),
+        file,
+        defect.description || '',
+        defect.location || '',
+        defect.agreedRemediationAction || '',
+        authToken
+      );
+      
+      // Update with server ID
+      setSnaggingDefects(prev => prev.map(d => 
+        d.id === defectId ? { ...d, serverId: result.defect.id } : d
+      ));
+      
+      toast.success("Defect saved!");
+    } catch (error) {
+      console.error("Failed to save defect:", error);
+      toast.error("Failed to save defect");
+      // Remove from local state if save failed
+      setSnaggingDefects(prev => prev.filter(d => d.id !== defectId));
+    }
+  };
+
+  const saveSnaggingDefectDetails = async (defectId: string) => {
+    const defect = snaggingDefects.find(d => d.id === defectId);
+    if (!defect || !defect.serverId || !handoverBooking) return;
+
+    try {
+      await updateSnaggingDefect(
+        Number(handoverBooking.id),
+        defect.serverId,
+        defect.description || '',
+        defect.location || '',
+        defect.agreedRemediationAction || '',
+        authToken,
+        defect.is_remediated
+      );
+      toast.success("Defect details updated!");
+      // Collapse the defect after saving
+      setExpandedDefects(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(defectId);
+        return newSet;
+      });
+    } catch (error) {
+      console.error("Failed to update defect:", error);
+      toast.error("Failed to update defect details");
+    }
+  };
+
+  const toggleDefectRemediation = (defectId: string) => {
+    setSnaggingDefects(snaggingDefects.map(d => 
+      d.id === defectId ? { ...d, is_remediated: !d.is_remediated } : d
+    ));
+  };
+
+  const startSnaggingCamera = async (defectId: string) => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast.error(
+        "Camera access requires HTTPS connection. Please access this page via https:// or use file upload instead.",
+        { duration: 6000 }
+      );
+      return;
+    }
+
+    setActiveSnaggingDefectId(defectId);
+    setShowSnaggingCamera(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment', width: 1280, height: 720 } 
+      });
+      if (snaggingVideoRef.current) {
+        snaggingVideoRef.current.srcObject = stream;
+        await snaggingVideoRef.current.play();
+      }
+    } catch (err: any) {
+      console.error("Error accessing camera:", err);
+      
+      if (err.name === 'NotAllowedError') {
+        toast.error("Camera permission denied. Please allow camera access in your browser settings.");
+      } else if (err.name === 'NotFoundError') {
+        toast.error("No camera found on this device.");
+      } else if (err.name === 'NotReadableError') {
+        toast.error("Camera is already in use by another application.");
+      } else {
+        toast.error("Could not access camera. Please check permissions or use file upload.");
+      }
+      
+      setShowSnaggingCamera(false);
+      setActiveSnaggingDefectId(null);
+    }
+  };
+
+  const stopSnaggingCamera = () => {
+    if (snaggingVideoRef.current && snaggingVideoRef.current.srcObject) {
+      const tracks = (snaggingVideoRef.current.srcObject as MediaStream).getTracks();
+      tracks.forEach(track => track.stop());
+      snaggingVideoRef.current.srcObject = null;
+      setShowSnaggingCamera(false);
+      setActiveSnaggingDefectId(null);
+    }
+  };
+
+  const captureSnaggingPhoto = async () => {
+    if (snaggingVideoRef.current && snaggingCanvasRef.current && activeSnaggingDefectId) {
+      const video = snaggingVideoRef.current;
+      const canvas = snaggingCanvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0);
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const file = new File([blob], `snagging-defect-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            const preview = canvas.toDataURL('image/jpeg');
+            updateSnaggingDefectImage(activeSnaggingDefectId, file, preview);
+            stopSnaggingCamera();
+            toast.success("Defect photo captured!");
+          }
+        }, 'image/jpeg', 0.9);
       }
     }
   };
@@ -910,7 +1088,40 @@ export function AdminDashboard({
                                 {user?.payment_date ? format(new Date(user.payment_date), "MMM d, yyyy") : "N/A"}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                {getBookingStatusBadge(booking.status)}
+                                <div className="space-y-2">
+                                  {getBookingStatusBadge(booking.status)}
+                                  {/* Handover Completion Checklist */}
+                                  {booking.status === 'confirmed' && (
+                                    <div className="text-xs">
+                                      {(() => {
+                                        // Check if declaration is truly complete (no unresolved defects)
+                                        const hasUnresolvedDefects = booking.snagging_defects?.some((d: any) => !d.is_remediated) || false;
+                                        const isDeclarationComplete = booking.handover_declaration && !hasUnresolvedDefects;
+                                        
+                                        const completedItems = [
+                                          isDeclarationComplete ? 1 : 0,
+                                          booking.handover_checklist ? 1 : 0,
+                                          booking.handover_photo ? 1 : 0,
+                                          booking.client_signature ? 1 : 0
+                                        ].reduce((a, b) => a + b, 0);
+                                        
+                                        return (
+                                          <div className="flex items-center gap-1.5 mt-1">
+                                            <span className={`font-medium ${completedItems === 4 ? 'text-green-600' : 'text-orange-600'}`}>
+                                              {completedItems}/4
+                                            </span>
+                                            <div className="flex gap-0.5">
+                                              <span className={`w-2 h-2 rounded-full ${isDeclarationComplete ? 'bg-green-500' : 'bg-gray-300'}`} title={hasUnresolvedDefects ? "Declaration (Unresolved Defects)" : "Declaration"} />
+                                              <span className={`w-2 h-2 rounded-full ${booking.handover_checklist ? 'bg-green-500' : 'bg-gray-300'}`} title="Checklist" />
+                                              <span className={`w-2 h-2 rounded-full ${booking.handover_photo ? 'bg-green-500' : 'bg-gray-300'}`} title="Photo" />
+                                              <span className={`w-2 h-2 rounded-full ${booking.client_signature ? 'bg-green-500' : 'bg-gray-300'}`} title="Signature" />
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex items-center justify-end gap-2">
@@ -919,66 +1130,9 @@ export function AdminDashboard({
                                       <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={async () => {
-                                          console.log('Booking object:', booking);
-                                          console.log('handover_checklist:', booking.handover_checklist);
-                                          console.log('handover_declaration:', booking.handover_declaration);
-                                          console.log('handover_photo:', booking.handover_photo);
-                                          console.log('client_signature:', booking.client_signature);
-                                          
-                                          setHandoverBooking(booking);
-                                          setHandoverDialogOpen(true);
-                                          
-                                          // Load templates
-                                          setLoadingTemplates(true);
-                                          try {
-                                            const templates = await getProjectTemplates(
-                                              parseInt(booking.id),
-                                              authToken
-                                            );
-                                            setHandoverChecklistTemplate(templates.handover_checklist_template);
-                                            setDeclarationTemplate(templates.declaration_template);
-                                            
-                                            // Load existing handover files and set previews
-                                            console.log('Setting previews...');
-                                            console.log('handover_checklist_url:', booking.handover_checklist_url);
-                                            console.log('handover_declaration_url:', booking.handover_declaration_url);
-                                            console.log('handover_photo_url:', booking.handover_photo_url);
-                                            console.log('client_signature_url:', booking.client_signature_url);
-                                            
-                                            if (booking.handover_checklist_url) {
-                                              setHandoverChecklistPreview(booking.handover_checklist_url);
-                                              console.log('Set checklist preview to:', booking.handover_checklist_url);
-                                            } else {
-                                              setHandoverChecklistPreview(null);
-                                            }
-                                            
-                                            if (booking.handover_declaration_url) {
-                                              setHandoverDeclarationPreview(booking.handover_declaration_url);
-                                              console.log('Set declaration preview to:', booking.handover_declaration_url);
-                                            } else {
-                                              setHandoverDeclarationPreview(null);
-                                            }
-                                            
-                                            if (booking.handover_photo_url) {
-                                              setHandoverPhotoPreview(booking.handover_photo_url);
-                                              console.log('Set photo preview to:', booking.handover_photo_url);
-                                            } else {
-                                              setHandoverPhotoPreview(null);
-                                            }
-                                            
-                                            if (booking.client_signature_url) {
-                                              setClientSignaturePreview(booking.client_signature_url);
-                                              console.log('Set signature preview to:', booking.client_signature_url);
-                                            } else {
-                                              setClientSignaturePreview(null);
-                                            }
-                                          } catch (error) {
-                                            console.error("Error loading templates:", error);
-                                            toast.error("Failed to load templates");
-                                          } finally {
-                                            setLoadingTemplates(false);
-                                          }
+                                        onClick={() => {
+                                          // Navigate to handover completion page
+                                          router.push(`/admin/handover/${booking.id}`);
                                         }}
                                         className="bg-green-50 hover:bg-green-100 border-green-200 text-green-700"
                                       >
@@ -1034,6 +1188,22 @@ export function AdminDashboard({
                   </CardDescription>
                 </div>
                 <div className="flex gap-2">
+                  <Button
+                    onClick={() => setBulkSOADialogOpen(true)}
+                    className="bg-blue-600 text-white hover:bg-blue-700"
+                    size="sm"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Bulk Upload SOA
+                  </Button>
+                  <Button
+                    onClick={() => setBulkHandoverDialogOpen(true)}
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    size="sm"
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    Bulk Send Handover
+                  </Button>
                   <Button
                     onClick={() => setAddClientDialogOpen(true)}
                     className="bg-white text-black hover:bg-gray-100"
@@ -1192,6 +1362,30 @@ export function AdminDashboard({
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
+                      <th className="px-4 py-3 text-left">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300"
+                          checked={(() => {
+                            const eligibleUnits = allUnitsForListing.filter(u => {
+                              const hasSOA = u.attachments?.some((att: any) => att.type === 'soa');
+                              return hasSOA;
+                            });
+                            return eligibleUnits.length > 0 && eligibleUnits.every(u => selectedUnitsForHandover.has(u.id));
+                          })()}
+                          onChange={(e) => {
+                            const eligibleUnits = allUnitsForListing.filter(u => {
+                              const hasSOA = u.attachments?.some((att: any) => att.type === 'soa');
+                              return hasSOA;
+                            });
+                            if (e.target.checked) {
+                              setSelectedUnitsForHandover(new Set(eligibleUnits.map(u => u.id)));
+                            } else {
+                              setSelectedUnitsForHandover(new Set());
+                            }
+                          }}
+                        />
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Number</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client Names</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SOA Status</th>
@@ -1262,36 +1456,69 @@ export function AdminDashboard({
                         const attachments = unit.attachments || [];
                         const hasSOA = attachments.some((att: any) => att.type === 'soa');
                         
-                        // Calculate handover requirements
-                        const hasMortgage = unit.has_mortgage || false;
-                        const totalRequirements = hasMortgage ? 6 : 5;
-                        const requiredTypes = hasMortgage 
-                          ? ['payment_proof', 'ac_connection', 'dewa_connection', 'service_charge_ack', 'developer_noc', 'bank_noc']
-                          : ['payment_proof', 'ac_connection', 'dewa_connection', 'service_charge_ack', 'developer_noc'];
-                        const uploadedCount = requiredTypes.filter(type => 
+                        // Calculate handover requirements - split into client and developer
+                        
+                        // Client requirements: 4 total
+                        // 1. 100% SOA receipt (payment_proof)
+                        // 2. AC connection
+                        // 3. DEWA connection
+                        // 4. Service charge acknowledgement signed by buyer (service_charge_ack_buyer)
+                        const clientRequiredTypes = ['payment_proof', 'ac_connection', 'dewa_connection', 'service_charge_ack_buyer'];
+                        const clientUploadedCount = clientRequiredTypes.filter(type => 
                           attachments.some((att: any) => att.type === type)
                         ).length;
-                        const allRequirementsMet = uploadedCount === totalRequirements;
+                        const clientTotalRequirements = 4;
+                        
+                        // Developer requirements: 2 total
+                        // 1. Developer NOC signed (developer_noc_signed)
+                        // 2. Service charge acknowledgement signed by developer (service_charge_ack_developer)
+                        const developerRequiredTypes = ['developer_noc_signed', 'service_charge_ack_developer'];
+                        const developerUploadedCount = developerRequiredTypes.filter(type => 
+                          attachments.some((att: any) => att.type === type)
+                        ).length;
+                        const developerTotalRequirements = 2;
+                        
+                        const allRequirementsMet = clientUploadedCount === clientTotalRequirements && 
+                                                   developerUploadedCount === developerTotalRequirements;
                         
                         // Get booking info
                         const booking = unit.booking;
                         
+                        // Check if unit is eligible for handover email (has SOA)
+                        const isEligibleForHandover = hasSOA;
+                        
                         return (
                           <tr 
                             key={unit.id} 
-                            className="hover:bg-gray-50 cursor-pointer transition-colors"
-                            onClick={() => router.push(`/admin/units/${unit.id}`)}
+                            className="hover:bg-gray-50 transition-colors"
                           >
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                className="rounded border-gray-300"
+                                disabled={!isEligibleForHandover}
+                                checked={selectedUnitsForHandover.has(unit.id)}
+                                onChange={(e) => {
+                                  const newSet = new Set(selectedUnitsForHandover);
+                                  if (e.target.checked) {
+                                    newSet.add(unit.id);
+                                  } else {
+                                    newSet.delete(unit.id);
+                                  }
+                                  setSelectedUnitsForHandover(newSet);
+                                }}
+                              />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/admin/units/${unit.id}`)}>
                               <div className="text-sm font-medium text-gray-900">{unit.unit}</div>
                               <div className="text-xs text-gray-500">{unit.property?.project_name || 'N/A'}</div>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-6 py-4 cursor-pointer" onClick={() => router.push(`/admin/units/${unit.id}`)}>
                               <div className="text-sm text-gray-900">
                                 {ownerNames}
                               </div>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-6 py-4 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/admin/units/${unit.id}`)}>
                               {hasSOA ? (
                                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                   ✓ Uploaded
@@ -1319,11 +1546,23 @@ export function AdminDashboard({
                               )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <span className={`text-sm ${allRequirementsMet ? 'text-green-600 font-medium' : 'text-gray-600'}`}>
-                                  {uploadedCount}/{totalRequirements}
-                                </span>
-                                {allRequirementsMet && <CheckCircle className="w-4 h-4 text-green-600" />}
+                              <div className="space-y-1">
+                                {/* Client Requirements */}
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-500 w-12">Client:</span>
+                                  <span className={`text-sm ${clientUploadedCount === clientTotalRequirements ? 'text-green-600 font-medium' : 'text-gray-600'}`}>
+                                    {clientUploadedCount}/{clientTotalRequirements}
+                                  </span>
+                                  {clientUploadedCount === clientTotalRequirements && <CheckCircle className="w-3.5 h-3.5 text-green-600" />}
+                                </div>
+                                {/* Developer Requirements */}
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-500 w-12">Dev:</span>
+                                  <span className={`text-sm ${developerUploadedCount === developerTotalRequirements ? 'text-green-600 font-medium' : 'text-gray-600'}`}>
+                                    {developerUploadedCount}/{developerTotalRequirements}
+                                  </span>
+                                  {developerUploadedCount === developerTotalRequirements && <CheckCircle className="w-3.5 h-3.5 text-green-600" />}
+                                </div>
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
@@ -1354,6 +1593,45 @@ export function AdminDashboard({
                                     <Clock className="w-3 h-3" />
                                     {booking.booked_time}
                                   </div>
+                                  {/* Handover Completion Checklist */}
+                                  {booking.status === 'confirmed' && (
+                                    <div className="mt-2 text-xs">
+                                      {(() => {
+                                        // Check if declaration is truly complete (no unresolved defects)
+                                        const hasUnresolvedDefects = booking.snagging_defects?.some((d: any) => !d.is_remediated) || false;
+                                        const isDeclarationComplete = booking.handover_declaration && !hasUnresolvedDefects;
+                                        
+                                        const completedItems = [
+                                          isDeclarationComplete ? 1 : 0,
+                                          booking.handover_checklist ? 1 : 0,
+                                          booking.handover_photo ? 1 : 0,
+                                          booking.client_signature ? 1 : 0
+                                        ].reduce((a, b) => a + b, 0);
+                                        
+                                        return (
+                                          <div className="flex items-center gap-1.5">
+                                            <span className={`font-medium ${completedItems === 4 ? 'text-green-600' : 'text-orange-600'}`}>
+                                              {completedItems}/4
+                                            </span>
+                                            <div className="flex gap-0.5">
+                                              <span className={`w-1.5 h-1.5 rounded-full ${isDeclarationComplete ? 'bg-green-500' : 'bg-gray-300'}`} title={hasUnresolvedDefects ? "Declaration (Unresolved Defects)" : "Declaration"} />
+                                              <span className={`w-1.5 h-1.5 rounded-full ${booking.handover_checklist ? 'bg-green-500' : 'bg-gray-300'}`} title="Checklist" />
+                                              <span className={`w-1.5 h-1.5 rounded-full ${booking.handover_photo ? 'bg-green-500' : 'bg-gray-300'}`} title="Photo" />
+                                              <span className={`w-1.5 h-1.5 rounded-full ${booking.client_signature ? 'bg-green-500' : 'bg-gray-300'}`} title="Signature" />
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
+                                  {booking.status === 'completed' && (
+                                    <div className="mt-1">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                        <CheckCircle className="w-3 h-3 mr-1" />
+                                        Completed
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               ) : (
                                 <span className="text-sm text-gray-400">Not Booked</span>
@@ -1493,160 +1771,6 @@ export function AdminDashboard({
         )}
       </div>
 
-      {/* Edit Payment Status Dialog */}
-      <Dialog open={!!editingUser} onOpenChange={(open) => {
-        if (!open) {
-          setEditingUser(null);
-          setReceiptFile(null);
-        }
-      }}>
-        <DialogContent className="border border-gray-200">
-          <DialogHeader>
-            <DialogTitle>Update Payment Status</DialogTitle>
-            <DialogDescription>
-              Update the payment status for {editingUser?.full_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>User</Label>
-              <p className="text-sm text-gray-600">{editingUser?.email}</p>
-              <p className="text-sm text-gray-600">{editingUser?.units?.map(u => u.unit).join(', ') || 'N/A'}</p>
-            </div>
-            <div className="space-y-2">
-              <Label>Payment Status</Label>
-              <Select
-                value={newPaymentStatus}
-                onValueChange={(value) => setNewPaymentStatus(value as User["payment_status"])}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="partial">Partial Payment</SelectItem>
-                  <SelectItem value="fully_paid">Fully Paid</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {newPaymentStatus === "fully_paid" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="receipt">Receipt Upload *</Label>
-                  <Input
-                    id="receipt"
-                    type="file"
-                    accept="application/pdf,image/jpeg,image/jpg,image/png"
-                    onChange={handleFileChange}
-                    className="cursor-pointer"
-                  />
-                  {receiptFile && (
-                    <p className="text-sm text-green-600">✓ {receiptFile.name}</p>
-                  )}
-                  <p className="text-xs text-gray-500">
-                    Required for fully paid status. PDF, JPEG, JPG, or PNG (max 10MB)
-                  </p>
-                </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <p className="text-sm text-green-800">
-                    Payment date will be set to today. User can book 3 days after this date.
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setEditingUser(null);
-              setReceiptFile(null);
-            }}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleUpdatePaymentStatus} 
-              className="bg-black hover:bg-gray-800 text-white"
-              disabled={newPaymentStatus === "fully_paid" && !receiptFile}
-            >
-              Update Status
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* View Credentials Dialog */}
-      <Dialog open={!!viewingCredentials} onOpenChange={(open) => !open && setViewingCredentials(null)}>
-        <DialogContent className="border border-gray-200 max-w-md">
-          <DialogHeader>
-            <DialogTitle>Customer Login Credentials</DialogTitle>
-            <DialogDescription>
-              Send these credentials to {viewingCredentials?.full_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-600">Email Address</Label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm font-mono text-gray-900">{viewingCredentials?.email}</p>
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    onClick={() => viewingCredentials && copyToClipboard(viewingCredentials.email, `email-${viewingCredentials.email}`)}
-                    className="shrink-0"
-                  >
-                    {copiedField === `email-${viewingCredentials?.email}` ? (
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-600">Password</Label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    {/* <p className="text-sm font-mono text-gray-900">{viewingCredentials?.password}</p> */}
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    // onClick={() => viewingCredentials && copyToClipboard(viewingCredentials.password, `password-${viewingCredentials.email}`)}
-                    className="shrink-0"
-                  >
-                    {copiedField === `password-${viewingCredentials?.email}` ? (
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    onClick={() => viewingCredentials && onRegeneratePassword(viewingCredentials.email)}
-                    title="Regenerate password"
-                    className="shrink-0"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-xs text-blue-800">
-                💡 Click the copy icon to copy credentials. Use the refresh icon to generate a new password.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setViewingCredentials(null)} className="bg-black hover:bg-gray-800 text-white">
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Rebook Dialog */}
       <Dialog open={!!rebookingBooking} onOpenChange={(open) => {
@@ -1749,728 +1873,7 @@ export function AdminDashboard({
         </DialogContent>
       </Dialog>
 
-      {/* Handover Completion Dialog */}
-      <Dialog open={handoverDialogOpen} onOpenChange={(open) => {
-        if (!open) {
-          setHandoverDialogOpen(false);
-          setHandoverBooking(null);
-          setAnnotatedChecklist(null);
-          setAnnotatedDeclaration(null);
-          setHandoverPhoto(null);
-          setHandoverPhotoPreview(null);
-          setClientSignature(null);
-          // Clear signature canvas
-          const canvas = signatureCanvasRef.current;
-          if (canvas) {
-            const ctx = canvas.getContext('2d');
-            if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-          }
-          stopCamera();
-        }
-      }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl">Complete Handover Appointment</DialogTitle>
-            <DialogDescription>
-              Upload annotated documents and photo
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            {/* Booking Details */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="font-semibold mb-2">Appointment Details</h3>
-              <p className="text-sm text-gray-600">
-                {handoverBooking && format(handoverBooking.date, "EEEE, MMMM d, yyyy")} at {handoverBooking?.time}
-              </p>
-              <p className="text-sm text-gray-600">{handoverBooking?.customerEmail}</p>
-            </div>
 
-            {loadingTemplates ? (
-              <div className="text-center py-8">
-                <p className="text-gray-600">Loading templates...</p>
-              </div>
-            ) : (
-              <>
-                {/* Handover Checklist Upload */}
-                {handoverChecklistTemplate && (
-                  <Collapsible className="border rounded-lg overflow-hidden">
-                    <CollapsibleTrigger className="w-full">
-                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <FileText className="w-5 h-5 text-blue-600" />
-                          <div className="text-left">
-                            <h3 className="font-semibold text-lg">Handover Checklist</h3>
-                            <p className="text-sm text-gray-600">Download template, annotate & upload</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {handoverChecklistPreview && <Check className="w-5 h-5 text-green-600" />}
-                          <ChevronDown className="w-5 h-5 text-gray-400" />
-                        </div>
-                      </div>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <div className="p-4 bg-white space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <Button
-                            variant="outline"
-                            className="h-24 flex flex-col gap-2 border-dashed border-2 hover:border-blue-500 hover:bg-blue-50"
-                            onClick={() => {
-                              const link = document.createElement("a");
-                              link.href = handoverChecklistTemplate;
-                              link.download = "Handover_Checklist_Template.pdf";
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                            }}
-                          >
-                            <Download className="w-6 h-6 text-blue-600" />
-                            <span className="text-sm font-medium">Download Template</span>
-                          </Button>
-                          
-                          <div>
-                            <input
-                              type="file"
-                              accept="application/pdf"
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file && file.type === "application/pdf" && handoverBooking) {
-                                  try {
-                                    await uploadHandoverFile(Number(handoverBooking.id), 'handover_checklist', file, authToken);
-                                    setAnnotatedChecklist(file);
-                                    setHandoverChecklistPreview(URL.createObjectURL(file));
-                                    toast.success("Handover checklist uploaded!");
-                                  } catch (error) {
-                                    console.error("Upload error:", error);
-                                    toast.error("Failed to upload checklist");
-                                  }
-                                }
-                                // Reset input
-                                e.target.value = '';
-                              }}
-                              className="hidden"
-                              id="checklist-upload"
-                            />
-                            <label htmlFor="checklist-upload" className="block">
-                              <Button variant="outline" className="w-full h-24 flex flex-col gap-2 border-dashed border-2 hover:border-green-500 hover:bg-green-50" asChild>
-                                <span>
-                                  {annotatedChecklist ? (
-                                    <>
-                                      <Check className="w-6 h-6 text-green-600" />
-                                      <span className="text-sm font-medium text-green-600">Checklist Uploaded</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Upload className="w-6 h-6 text-gray-600" />
-                                      <span className="text-sm font-medium">Upload Annotated</span>
-                                    </>
-                                  )}
-                                </span>
-                              </Button>
-                            </label>
-                          </div>
-                        </div>
-                        {annotatedChecklist && (
-                          <div className="text-sm text-green-600 bg-green-50 p-2 rounded flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Check className="w-4 h-4" />
-                              <span>{annotatedChecklist.name}</span>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
-                              onClick={async () => {
-                                if (handoverBooking) {
-                                  try {
-                                    await deleteHandoverFile(Number(handoverBooking.id), 'handover_checklist', authToken);
-                                    setAnnotatedChecklist(null);
-                                    setHandoverChecklistPreview(null);
-                                    toast.success("Checklist deleted");
-                                  } catch (error) {
-                                    toast.error("Failed to delete checklist");
-                                  }
-                                }
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        )}
-                        {handoverChecklistPreview && (
-                          <div className="border rounded-lg overflow-hidden bg-gray-50">
-                            <div className="p-2 bg-gray-100 flex items-center justify-between">
-                              <span className="text-xs font-medium text-gray-700">PDF Preview</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6"
-                                onClick={() => window.open(handoverChecklistPreview, '_blank')}
-                              >
-                                <Eye className="w-3 h-3 mr-1" />
-                                Open Full
-                              </Button>
-                            </div>
-                            <iframe 
-                              src={handoverChecklistPreview} 
-                              className="w-full h-64 border-0"
-                              title="Handover Checklist Preview"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                )}
-
-                {/* Declaration Upload */}
-                {declarationTemplate && (
-                  <Collapsible className="border rounded-lg overflow-hidden">
-                    <CollapsibleTrigger className="w-full">
-                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <FileText className="w-5 h-5 text-purple-600" />
-                          <div className="text-left">
-                            <h3 className="font-semibold text-lg">Declaration V3</h3>
-                            <p className="text-sm text-gray-600">Download template, annotate & upload</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {handoverDeclarationPreview && <Check className="w-5 h-5 text-green-600" />}
-                          <ChevronDown className="w-5 h-5 text-gray-400" />
-                        </div>
-                      </div>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <div className="p-4 bg-white space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <Button
-                            variant="outline"
-                            className="h-24 flex flex-col gap-2 border-dashed border-2 hover:border-purple-500 hover:bg-purple-50"
-                            onClick={() => {
-                              const link = document.createElement("a");
-                              link.href = declarationTemplate;
-                              link.download = "Declaration_Template.pdf";
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                            }}
-                          >
-                            <Download className="w-6 h-6 text-purple-600" />
-                            <span className="text-sm font-medium">Download Template</span>
-                          </Button>
-                          
-                          <div>
-                            <input
-                              type="file"
-                              accept="application/pdf"
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file && file.type === "application/pdf" && handoverBooking) {
-                                  try {
-                                    await uploadHandoverFile(Number(handoverBooking.id), 'handover_declaration', file, authToken);
-                                    setAnnotatedDeclaration(file);
-                                    setHandoverDeclarationPreview(URL.createObjectURL(file));
-                                    toast.success("Declaration uploaded!");
-                                  } catch (error) {
-                                    console.error("Upload error:", error);
-                                    toast.error("Failed to upload declaration");
-                                  }
-                                }
-                                e.target.value = '';
-                              }}
-                              className="hidden"
-                              id="declaration-upload"
-                            />
-                            <label htmlFor="declaration-upload" className="block">
-                              <Button variant="outline" className="w-full h-24 flex flex-col gap-2 border-dashed border-2 hover:border-green-500 hover:bg-green-50" asChild>
-                                <span>
-                                  {annotatedDeclaration ? (
-                                    <>
-                                      <Check className="w-6 h-6 text-green-600" />
-                                      <span className="text-sm font-medium text-green-600">Declaration Uploaded</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Upload className="w-6 h-6 text-gray-600" />
-                                      <span className="text-sm font-medium">Upload Annotated</span>
-                                    </>
-                                  )}
-                                </span>
-                              </Button>
-                            </label>
-                          </div>
-                        </div>
-                        {annotatedDeclaration && (
-                          <div className="text-sm text-green-600 bg-green-50 p-2 rounded flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Check className="w-4 h-4" />
-                              <span>{annotatedDeclaration.name}</span>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
-                              onClick={async () => {
-                                if (handoverBooking) {
-                                  try {
-                                    await deleteHandoverFile(Number(handoverBooking.id), 'handover_declaration', authToken);
-                                    setAnnotatedDeclaration(null);
-                                    setHandoverDeclarationPreview(null);
-                                    toast.success("Declaration deleted");
-                                  } catch (error) {
-                                    toast.error("Failed to delete declaration");
-                                  }
-                                }
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        )}
-                        {handoverDeclarationPreview && (
-                          <div className="border rounded-lg overflow-hidden bg-gray-50">
-                            <div className="p-2 bg-gray-100 flex items-center justify-between">
-                              <span className="text-xs font-medium text-gray-700">PDF Preview</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6"
-                                onClick={() => window.open(handoverDeclarationPreview, '_blank')}
-                              >
-                                <Eye className="w-3 h-3 mr-1" />
-                                Open Full
-                              </Button>
-                            </div>
-                            <iframe 
-                              src={handoverDeclarationPreview} 
-                              className="w-full h-64 border-0"
-                              title="Declaration Preview"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                )}
-              </>
-            )}
-
-            {/* Photo Upload */}
-            <Collapsible className="border rounded-lg overflow-hidden">
-              <CollapsibleTrigger className="w-full">
-                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <ImageIcon className="w-5 h-5 text-green-600" />
-                    <div className="text-left">
-                      <h3 className="font-semibold text-lg">Handover Photo</h3>
-                      <p className="text-sm text-gray-600">Client with unit keys</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {handoverPhotoPreview && <Check className="w-5 h-5 text-green-600" />}
-                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                  </div>
-                </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="p-4 bg-white space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Camera Option */}
-                    <Button
-                      variant="outline"
-                      onClick={startCamera}
-                      className="h-24 flex flex-col gap-2 border-dashed border-2 hover:border-green-500 hover:bg-green-50"
-                    >
-                      <CalendarCheck className="w-6 h-6 text-green-600" />
-                      <span className="text-sm font-medium">{handoverPhotoPreview ? "✓ Photo Taken" : "Take Photo"}</span>
-                    </Button>
-
-                    {/* Upload Option */}
-                    <div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file && handoverBooking) {
-                            try {
-                              await uploadHandoverFile(Number(handoverBooking.id), 'handover_photo', file, authToken);
-                              setHandoverPhoto(file);
-                              const reader = new FileReader();
-                              reader.onloadend = () => {
-                                setHandoverPhotoPreview(reader.result as string);
-                              };
-                              reader.readAsDataURL(file);
-                              toast.success("Photo uploaded!");
-                            } catch (error) {
-                              console.error("Upload error:", error);
-                              toast.error("Failed to upload photo");
-                            }
-                          }
-                          e.target.value = '';
-                        }}
-                        className="hidden"
-                        id="handover-photo-upload"
-                      />
-                      <label htmlFor="handover-photo-upload" className="block">
-                        <Button variant="outline" asChild className="w-full h-24 flex flex-col gap-2 border-dashed border-2 hover:border-green-500 hover:bg-green-50">
-                          <span>
-                            {handoverPhoto ? (
-                              <>
-                                <Check className="w-6 h-6 text-green-600" />
-                                <span className="text-sm font-medium text-green-600">Photo Uploaded</span>
-                              </>
-                            ) : (
-                              <>
-                                <Upload className="w-6 h-6 text-gray-600" />
-                                <span className="text-sm font-medium">Upload Photo</span>
-                              </>
-                            )}
-                          </span>
-                        </Button>
-                      </label>
-                    </div>
-                  </div>
-                  {handoverPhotoPreview && (
-                    <>
-                      <div className="text-sm text-green-600 bg-green-50 p-2 rounded flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Check className="w-4 h-4" />
-                          <span>Photo captured successfully</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => {
-                            if (handoverBooking) {
-                              try {
-                                await deleteHandoverFile(Number(handoverBooking.id), 'handover_photo', authToken);
-                                setHandoverPhoto(null);
-                                setHandoverPhotoPreview(null);
-                                toast.success("Photo deleted");
-                              } catch (error) {
-                                toast.error("Failed to delete photo");
-                              }
-                            }
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                      <div className="border rounded-lg overflow-hidden">
-                        <img 
-                          src={handoverPhotoPreview} 
-                          alt="Handover photo preview" 
-                          className="w-full h-auto max-h-64 object-contain bg-gray-50"
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* Client Signature */}
-            <Collapsible className="border rounded-lg overflow-hidden">
-              <CollapsibleTrigger className="w-full">
-                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-amber-600" />
-                    <div className="text-left">
-                      <h3 className="font-semibold text-lg">Client Signature</h3>
-                      <p className="text-sm text-gray-600">Final acknowledgment signature</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {clientSignaturePreview && <Check className="w-5 h-5 text-green-600" />}
-                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                  </div>
-                </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="p-4 bg-white space-y-3">
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
-                    <canvas
-                      ref={signatureCanvasRef}
-                      width={600}
-                      height={200}
-                      className="w-full border border-gray-300 rounded bg-white cursor-crosshair"
-                      onMouseDown={(e) => {
-                        setIsDrawingSignature(true);
-                        const canvas = signatureCanvasRef.current;
-                        if (!canvas) return;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-                        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-                        ctx.beginPath();
-                        ctx.moveTo(x, y);
-                      }}
-                      onMouseMove={(e) => {
-                        if (!isDrawingSignature) return;
-                        const canvas = signatureCanvasRef.current;
-                        if (!canvas) return;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-                        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-                        ctx.lineTo(x, y);
-                        ctx.strokeStyle = '#000';
-                        ctx.lineWidth = 2;
-                        ctx.lineCap = 'round';
-                        ctx.stroke();
-                      }}
-                      onMouseUp={() => setIsDrawingSignature(false)}
-                      onMouseLeave={() => setIsDrawingSignature(false)}
-                      onTouchStart={(e) => {
-                        e.preventDefault();
-                        setIsDrawingSignature(true);
-                        const canvas = signatureCanvasRef.current;
-                        if (!canvas) return;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const touch = e.touches[0];
-                        const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
-                        const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
-                        ctx.beginPath();
-                        ctx.moveTo(x, y);
-                      }}
-                      onTouchMove={(e) => {
-                        e.preventDefault();
-                        if (!isDrawingSignature) return;
-                        const canvas = signatureCanvasRef.current;
-                        if (!canvas) return;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const touch = e.touches[0];
-                        const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
-                        const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
-                        ctx.lineTo(x, y);
-                        ctx.strokeStyle = '#000';
-                        ctx.lineWidth = 2;
-                        ctx.lineCap = 'round';
-                        ctx.stroke();
-                      }}
-                      onTouchEnd={() => setIsDrawingSignature(false)}
-                    />
-                    <p className="text-xs text-gray-500 mt-2 text-center">Sign above with mouse or touch</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const canvas = signatureCanvasRef.current;
-                        if (!canvas) return;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) return;
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        setClientSignature(null);
-                        setClientSignaturePreview(null);
-                        toast.success('Signature cleared');
-                      }}
-                    >
-                      Clear Signature
-                    </Button>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={async () => {
-                        const canvas = signatureCanvasRef.current;
-                        if (!canvas || !handoverBooking) return;
-                        canvas.toBlob(async (blob) => {
-                          if (blob) {
-                            const file = new File([blob], 'signature.png', { type: 'image/png' });
-                            try {
-                              await uploadHandoverFile(Number(handoverBooking.id), 'client_signature', file, authToken);
-                              setClientSignature(file);
-                              setClientSignaturePreview(canvas.toDataURL('image/png'));
-                              toast.success('Signature saved!');
-                            } catch (error) {
-                              console.error("Upload error:", error);
-                              toast.error("Failed to save signature");
-                            }
-                          }
-                        });
-                      }}
-                    >
-                      Save Signature
-                    </Button>
-                  </div>
-                  {clientSignaturePreview && (
-                    <>
-                      <div className="text-sm text-green-600 bg-green-50 p-2 rounded flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Check className="w-4 h-4" />
-                          <span>Signature saved successfully</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => {
-                            if (handoverBooking) {
-                              try {
-                                await deleteHandoverFile(Number(handoverBooking.id), 'client_signature', authToken);
-                                setClientSignature(null);
-                                setClientSignaturePreview(null);
-                                // Clear canvas
-                                const canvas = signatureCanvasRef.current;
-                                if (canvas) {
-                                  const ctx = canvas.getContext('2d');
-                                  if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                }
-                                toast.success("Signature deleted");
-                              } catch (error) {
-                                toast.error("Failed to delete signature");
-                              }
-                            }
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                      <div className="border rounded-lg overflow-hidden bg-white p-4">
-                        <img 
-                          src={clientSignaturePreview} 
-                          alt="Client signature preview" 
-                          className="w-full h-auto max-h-32 object-contain"
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* Validation Warning */}
-            {(!handoverChecklistPreview || !handoverDeclarationPreview || !handoverPhotoPreview || !clientSignaturePreview) && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <p className="text-sm text-yellow-800">
-                  ⚠️ Please upload both annotated PDF documents, capture a photo, and obtain client signature before completing
-                </p>
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setHandoverDialogOpen(false)}
-              disabled={completingHandover}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={async () => {
-                if (!handoverChecklistPreview) {
-                  toast.error("Please upload the handover checklist");
-                  return;
-                }
-                
-                if (!handoverDeclarationPreview) {
-                  toast.error("Please upload the declaration");
-                  return;
-                }
-                
-                if (!handoverPhotoPreview) {
-                  toast.error("Please upload a handover photo");
-                  return;
-                }
-                
-                if (!clientSignaturePreview) {
-                  toast.error("Please obtain and save the client signature");
-                  return;
-                }
-                
-                setCompletingHandover(true);
-                try {
-                  if (handoverBooking) {
-                    // Files already uploaded, just mark as complete
-                    await completeHandover(Number(handoverBooking.id), authToken);
-                    toast.success("Handover completed successfully!");
-                    setHandoverDialogOpen(false);
-                    setAnnotatedChecklist(null);
-                    setAnnotatedDeclaration(null);
-                    setHandoverPhoto(null);
-                    setHandoverChecklistPreview(null);
-                    setHandoverDeclarationPreview(null);
-                    setHandoverPhotoPreview(null);
-                    setClientSignature(null);
-                    setClientSignaturePreview(null);
-                    // Clear signature canvas
-                    const canvas = signatureCanvasRef.current;
-                    if (canvas) {
-                      const ctx = canvas.getContext('2d');
-                      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    }
-                    // Refresh bookings
-                    onFilterBookings({});
-                  }
-                } catch (error) {
-                  console.error("Failed to complete handover:", error);
-                  toast.error("Failed to complete handover");
-                } finally {
-                  setCompletingHandover(false);
-                }
-              }}
-              disabled={completingHandover || !handoverChecklistPreview || !handoverDeclarationPreview || !handoverPhotoPreview || !clientSignaturePreview}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              {completingHandover ? "Completing..." : "Complete Handover"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Camera Capture Dialog */}
-      <Dialog open={showCamera} onOpenChange={(open) => {
-        if (!open) {
-          stopCamera();
-        }
-      }}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Take Handover Photo</DialogTitle>
-            <DialogDescription>
-              Position the client with the unit keys in the frame
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '500px' }}>
-              <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline
-                muted
-                style={{ width: '100%', height: '100%', display: 'block' }}
-              />
-            </div>
-            <canvas ref={canvasRef} className="hidden" />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={stopCamera}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={capturePhoto}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <CalendarCheck className="w-5 h-5 mr-2" />
-              Capture Photo
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Edit Booking Status Dialog */}
       <Dialog open={!!editingBooking} onOpenChange={(open) => !open && setEditingBooking(null)}>
@@ -2828,7 +2231,7 @@ export function AdminDashboard({
                       <Paperclip className="w-4 h-4" />
                       Attachments
                     </Label>
-                    <div className="mt-2">
+                    <div className="mt-2 space-y-3">
                       {emailRecipients[0].attachments?.some(att => att.type === "soa") ? (
                         <div className="space-y-2">
                           {emailRecipients[0].attachments
@@ -2855,6 +2258,42 @@ export function AdminDashboard({
                         <div className="p-3 bg-red-50 border border-red-200 rounded">
                           <p className="text-sm text-red-800 font-medium">
                             ⚠️ No SOA uploaded for this user
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* Service Charge Acknowledgement Download */}
+                      {emailRecipients[0].units && emailRecipients[0].units.length > 0 && (
+                        <div className="border-t border-gray-200 pt-3">
+                          <Label className="text-sm font-medium mb-2 block">Service Charge Acknowledgement</Label>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-start gap-2 hover:bg-orange-50 hover:border-orange-500"
+                            onClick={async () => {
+                              try {
+                                const unitId = emailRecipients[0].units![0].id;
+                                const blob = await downloadServiceChargeAcknowledgement(unitId, authToken);
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement("a");
+                                link.href = url;
+                                link.download = `Service_Charge_Acknowledgement_${emailRecipients[0].units![0].unit}.pdf`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                window.URL.revokeObjectURL(url);
+                                toast.success("PDF downloaded successfully!");
+                              } catch (error) {
+                                toast.error("Failed to download PDF");
+                                console.error(error);
+                              }
+                            }}
+                          >
+                            <Download className="w-4 h-4 text-orange-600" />
+                            <span className="text-sm">Download Template (Pre-filled)</span>
+                          </Button>
+                          <p className="text-xs text-gray-500 mt-1">
+                            This template is included in the initial handover notice and auto-filled with owner information.
                           </p>
                         </div>
                       )}
@@ -2923,6 +2362,405 @@ export function AdminDashboard({
                 <>
                   <Send className="w-4 h-4 mr-2" />
                   Send Email
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Upload SOA Dialog */}
+      <Dialog open={bulkSOADialogOpen} onOpenChange={(open) => {
+        setBulkSOADialogOpen(open);
+        if (!open) {
+          setSOAFiles([]);
+        }
+      }}>
+        <DialogContent className="border border-gray-200 max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload SOA</DialogTitle>
+            <DialogDescription>
+              Upload multiple SOA files. Files should be named as: [unit_no]-SOA.pdf (e.g., 202-SOA.pdf)
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Dropzone */}
+            <div
+              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors cursor-pointer"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
+              }}
+              onDragLeave={(e) => {
+                e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('border-blue-500', 'bg-blue-50');
+                const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+                if (files.length > 0) {
+                  setSOAFiles(prev => [...prev, ...files]);
+                } else {
+                  toast.error('Please upload PDF files only');
+                }
+              }}
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.multiple = true;
+                input.accept = 'application/pdf';
+                input.onchange = (e) => {
+                  const files = Array.from((e.target as HTMLInputElement).files || []);
+                  setSOAFiles(prev => [...prev, ...files]);
+                };
+                input.click();
+              }}
+            >
+              <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+              <p className="text-sm text-gray-600 mb-2">
+                Drag and drop SOA files here, or click to browse
+              </p>
+              <p className="text-xs text-gray-500">
+                Only PDF files accepted
+              </p>
+            </div>
+
+            {/* File Preview with Unit Matching */}
+            {soaFiles.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="font-medium text-sm">Files to Upload ({soaFiles.length})</h3>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">File Name</th>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Matched Unit</th>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Status</th>
+                        <th className="px-4 py-2 text-center font-medium text-gray-700">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {soaFiles.map((file, index) => {
+                        // Extract unit number from filename: [unit_no]-SOA.pdf or [unit_no]-soa.pdf
+                        const match = file.name.match(/^([^-]+)-soa[.]pdf$/i);
+                        const extractedUnitNo = match ? match[1].trim() : null;
+                        
+                        // Find matching unit from allUnitsForListing
+                        const matchedUnit = extractedUnitNo 
+                          ? allUnitsForListing.find(u => u.unit === extractedUnitNo)
+                          : null;
+                        
+                        const hasValidFormat = match !== null;
+                        const hasMatch = matchedUnit !== null;
+                        
+                        return (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-red-500" />
+                                <span className="text-gray-900">{file.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              {matchedUnit ? (
+                                <div className="text-sm">
+                                  <div className="font-medium text-gray-900">Unit {matchedUnit.unit}</div>
+                                  <div className="text-gray-500">{matchedUnit.property?.project_name || 'N/A'}</div>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic">No match</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              {!hasValidFormat ? (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                  Invalid format
+                                </span>
+                              ) : !hasMatch ? (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                  Unit not found
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  <Check className="w-3 h-3 mr-1" />
+                                  Ready
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSOAFiles(prev => prev.filter((_, i) => i !== index));
+                                }}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Trash2 className="w-4 h-4 text-gray-500 hover:text-red-600" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Summary */}
+                <div className="flex items-center gap-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-gray-700">
+                      Ready: <span className="font-medium">{soaFiles.filter(f => {
+                        const match = f.name.match(/^([^-]+)-soa[.]pdf$/i);
+                        const extractedUnitNo = match ? match[1].trim() : null;
+                        return extractedUnitNo && allUnitsForListing.find(u => u.unit === extractedUnitNo);
+                      }).length}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-yellow-600" />
+                    <span className="text-gray-700">
+                      Issues: <span className="font-medium">{soaFiles.filter(f => {
+                        const match = f.name.match(/^([^-]+)-soa[.]pdf$/i);
+                        const extractedUnitNo = match ? match[1].trim() : null;
+                        return !extractedUnitNo || !allUnitsForListing.find(u => u.unit === extractedUnitNo);
+                      }).length}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBulkSOADialogOpen(false);
+                setSOAFiles([]);
+              }}
+              disabled={uploadingSOAs}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                // Filter only valid files
+                const validFiles = soaFiles.filter(f => {
+                  const match = f.name.match(/^([^-]+)-soa[.]pdf$/i);
+                  const extractedUnitNo = match ? match[1].trim() : null;
+                  return extractedUnitNo && allUnitsForListing.find(u => u.unit === extractedUnitNo);
+                });
+
+                if (validFiles.length === 0) {
+                  toast.error('No valid files to upload');
+                  return;
+                }
+
+                setUploadingSOAs(true);
+
+                try {
+                  // Prepare data for bulk upload
+                  const formData = new FormData();
+                  const unitIds: number[] = [];
+
+                  validFiles.forEach((file) => {
+                    const match = file.name.match(/^([^-]+)-soa[.]pdf$/i);
+                    const unitNo = match![1].trim();
+                    const unit = allUnitsForListing.find(u => u.unit === unitNo);
+                    
+                    if (unit) {
+                      formData.append('files[]', file);
+                      unitIds.push(unit.id);
+                    }
+                  });
+
+                  // Append unit IDs as individual form fields
+                  unitIds.forEach((id) => {
+                    formData.append('unit_ids[]', id.toString());
+                  });
+
+                  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/bulk-upload-soa`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${authToken}`,
+                    },
+                    body: formData,
+                  });
+
+                  const result = await response.json();
+
+                  if (response.ok) {
+                    toast.success(result.message || `Successfully uploaded ${result.uploaded_count} SOA file(s)`);
+                    if (result.errors && result.errors.length > 0) {
+                      console.error('Some files failed:', result.errors);
+                      toast.error(`${result.errors.length} file(s) failed to upload`);
+                    }
+                    fetchAllUnitsForListing(); // Refresh units
+                  } else {
+                    toast.error(result.message || 'Failed to upload SOA files');
+                  }
+                } catch (error) {
+                  console.error('Error uploading SOA files:', error);
+                  toast.error('Failed to upload SOA files');
+                }
+
+                setUploadingSOAs(false);
+                setBulkSOADialogOpen(false);
+                setSOAFiles([]);
+              }}
+              disabled={uploadingSOAs || soaFiles.filter(f => {
+                const match = f.name.match(/^([^-]+)-soa[.]pdf$/i);
+                const extractedUnitNo = match ? match[1].trim() : null;
+                return extractedUnitNo && allUnitsForListing.find(u => u.unit === extractedUnitNo);
+              }).length === 0}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {uploadingSOAs ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload {soaFiles.filter(f => {
+                    const match = f.name.match(/^([^-]+)-soa[.]pdf$/i);
+                    const extractedUnitNo = match ? match[1].trim() : null;
+                    return extractedUnitNo && allUnitsForListing.find(u => u.unit === extractedUnitNo);
+                  }).length} File(s)
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Send Handover Dialog */}
+      <Dialog open={bulkHandoverDialogOpen} onOpenChange={(open) => {
+        setBulkHandoverDialogOpen(open);
+        if (!open) {
+          setSelectedUnitsForHandover(new Set());
+        }
+      }}>
+        <DialogContent className="border border-gray-200 max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Confirm Bulk Send Handover Notice</DialogTitle>
+            <DialogDescription>
+              You are about to send handover notice emails to the selected units. This action will queue the emails for background processing.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Summary */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <Mail className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div className="flex-1 space-y-2">
+                  <div className="font-medium text-gray-900">
+                    {selectedUnitsForHandover.size} unit{selectedUnitsForHandover.size !== 1 ? 's' : ''} selected
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Units: {Array.from(selectedUnitsForHandover).map(id => {
+                      const unit = allUnitsForListing.find(u => u.id === id);
+                      return unit?.unit;
+                    }).filter(Boolean).join(', ')}
+                  </div>
+                  <div className="text-sm text-gray-600 mt-2">
+                    Each email will include:
+                    <ul className="list-disc list-inside mt-1 ml-2 space-y-1">
+                      <li>SOA document(s)</li>
+                      <li>Service Charge Acknowledgement PDF</li>
+                      <li>Project-specific handover documents</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <div className="text-sm text-gray-700">
+                  <p className="font-medium mb-1">Please note:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Emails will be queued and sent in the background</li>
+                    <li>Units without owners will be automatically skipped</li>
+                    <li>You can continue working while emails are being sent</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBulkHandoverDialogOpen(false);
+                setSelectedUnitsForHandover(new Set());
+              }}
+              disabled={sendingHandovers}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (selectedUnitsForHandover.size === 0) {
+                  toast.error('Please select at least one unit');
+                  return;
+                }
+
+                setSendingHandovers(true);
+
+                try {
+                  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/bulk-send-handover`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${authToken}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      unit_ids: Array.from(selectedUnitsForHandover)
+                    }),
+                  });
+
+                  const result = await response.json();
+
+                  if (response.ok) {
+                    toast.success(result.message || `Queued ${result.queued_count} handover email(s)`);
+                    if (result.skipped && result.skipped.length > 0) {
+                      console.log('Skipped units:', result.skipped);
+                      toast.warning(`${result.skipped.length} unit(s) were skipped`);
+                    }
+                    fetchAllUnitsForListing(); // Refresh units
+                  } else {
+                    toast.error(result.message || 'Failed to queue handover emails');
+                  }
+                } catch (error) {
+                  console.error('Error sending handover emails:', error);
+                  toast.error('Failed to queue handover emails');
+                }
+
+                setSendingHandovers(false);
+                setBulkHandoverDialogOpen(false);
+                setSelectedUnitsForHandover(new Set());
+              }}
+              disabled={sendingHandovers || selectedUnitsForHandover.size === 0}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {sendingHandovers ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Queueing...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Send to {selectedUnitsForHandover.size} Unit(s)
                 </>
               )}
             </Button>
@@ -3017,6 +2855,16 @@ export function AdminDashboard({
                 placeholder="+971 50 123 4567"
               />
             </div>
+            <div>
+              <Label htmlFor="passport">Passport Number (Required)</Label>
+              <Input
+                id="passport"
+                value={newClientData.passport_number || ''}
+                onChange={(e) => setNewClientData({...newClientData, passport_number: e.target.value})}
+                placeholder="Passport number"
+                required
+              />
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -3044,11 +2892,17 @@ export function AdminDashboard({
                     return;
                   }
 
+                  if (!newClientData.passport_number) {
+                    toast.error("Passport number is required");
+                    return;
+                  }
+
                   const response = await createUserWithUnit({
                     unit_id: parseInt(selectedUnitId),
                     full_name: newClientData.full_name,
                     email: newClientData.email,
                     mobile_number: newClientData.mobile_number || undefined,
+                    passport_number: newClientData.passport_number,
                     is_primary: newClientData.is_primary
                   }, authToken);
 
@@ -3062,6 +2916,7 @@ export function AdminDashboard({
                       email: "",
                       unit_number: "",
                       mobile_number: "",
+                      passport_number: "",
                       is_primary: true,
                     });
                     // Refresh units data

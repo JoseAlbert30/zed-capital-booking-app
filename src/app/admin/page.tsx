@@ -54,6 +54,8 @@ export default function AdminPage() {
         handover_declaration_url: booking.handover_declaration_url,
         handover_photo_url: booking.handover_photo_url,
         client_signature_url: booking.client_signature_url,
+        // Snagging defects
+        snagging_defects: booking.snagging_defects || [],
       }));
       setBookings(transformedBookings);
     } catch (error) {

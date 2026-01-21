@@ -2,12 +2,27 @@
  * Unit-based API functions for managing units, attachments, payments, and handover process
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+import { API_BASE_URL } from '@/config/api';
 
 export interface HandoverStatus {
   handover_ready: boolean;
+  buyer_ready: boolean;
+  developer_ready: boolean;
   has_mortgage: boolean;
-  requirements: Array<{
+  buyer_requirements: Array<{
+    type: string;
+    label: string;
+    required: boolean;
+    uploaded: boolean;
+  }>;
+  developer_requirements: Array<{
+    type: string;
+    label: string;
+    required: boolean;
+    uploaded: boolean;
+  }>;
+  // Legacy support
+  requirements?: Array<{
     type: string;
     label: string;
     required: boolean;
@@ -286,6 +301,86 @@ export async function getEligibleUnits(token: string): Promise<any> {
 
     if (!response.ok) {
       throw new Error("Failed to fetch eligible units");
+    }
+
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Get preview of developer requirements email
+ */
+export async function previewDeveloperRequirements(
+  unitId: number,
+  token: string
+): Promise<any> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/units/${unitId}/developer-requirements-preview`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to load preview");
+    }
+
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Send buyer requirements to developer for approval
+ */
+export async function sendRequirementsToDeveloper(
+  unitId: number,
+  token: string
+): Promise<any> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/units/${unitId}/send-to-developer`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to send requirements to developer");
+    }
+
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Validate and update handover requirements status
+ */
+export async function validateHandoverRequirements(
+  unitId: number,
+  token: string
+): Promise<any> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/units/${unitId}/validate-handover-requirements`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to validate handover requirements");
     }
 
     return await response.json();

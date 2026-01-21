@@ -3,7 +3,7 @@ import "@/styles/index.css";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "Modern Booking System",
+  title: "Zed Capital Booking",
   description: "Property booking management system",
 };
 

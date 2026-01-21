@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CustomerBooking } from "@/components/customer-booking";
 import { logoutUser, User, getUserProfile } from "@/lib/api";
 import { getEligibleUnits } from "@/lib/unit-api";
@@ -32,6 +32,7 @@ type EligibleUnit = {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [userEmail, setUserEmail] = useState("");
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -40,6 +41,7 @@ export default function DashboardPage() {
   const [hasFetched, setHasFetched] = useState(false);
   const [eligibleUnits, setEligibleUnits] = useState<EligibleUnit[]>([]);
   const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
+  const [isFromBookingLink, setIsFromBookingLink] = useState(false);
 
   // Load saved login state on mount
   useEffect(() => {
@@ -66,6 +68,12 @@ export default function DashboardPage() {
     setAuthToken(savedToken);
     setUserEmail(savedEmail);
     
+    // Check if coming from booking link with unit_id parameter
+    const unitIdParam = searchParams.get('unit_id');
+    if (unitIdParam) {
+      setIsFromBookingLink(true);
+    }
+    
     // Fetch user profile with bookings
     const fetchUserProfile = async () => {
       try {
@@ -76,6 +84,15 @@ export default function DashboardPage() {
         const unitsData = await getEligibleUnits(savedToken);
         const units = Array.isArray(unitsData) ? unitsData : (unitsData.data || unitsData.units || []);
         setEligibleUnits(units);
+        
+        // Auto-select unit if unit_id in URL
+        if (unitIdParam) {
+          const unitId = parseInt(unitIdParam);
+          const unit = units.find((u: EligibleUnit) => u.id === unitId);
+          if (unit) {
+            setSelectedUnitId(unitId);
+          }
+        }
         
         // Transform bookings to match component format
         if (userData.bookings && userData.bookings.length > 0) {
@@ -102,7 +119,7 @@ export default function DashboardPage() {
     };
     
     fetchUserProfile();
-  }, [router, hasFetched]);
+  }, [router, hasFetched, searchParams]);
 
   const handleLogout = async () => {
     if (authToken) {
@@ -216,6 +233,7 @@ export default function DashboardPage() {
       eligibleUnits={eligibleUnits}
       selectedUnitId={selectedUnitId}
       onSelectUnit={setSelectedUnitId}
+      isFromBookingLink={isFromBookingLink}
     />
   );
 }
