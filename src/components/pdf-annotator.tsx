@@ -75,6 +75,7 @@ export function PDFAnnotator({ pdfUrl, onSave, title }: PDFAnnotatorProps) {
       const renderContext = {
         canvasContext: ctx,
         viewport: viewport,
+        canvas: canvas,
       };
 
       await page.render(renderContext).promise;
@@ -148,7 +149,7 @@ export function PDFAnnotator({ pdfUrl, onSave, title }: PDFAnnotatorProps) {
         });
 
         const pdfBytes = await pdfDoc.save();
-        const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+        const pdfBlob = new Blob([new Uint8Array(pdfBytes)], { type: "application/pdf" });
         
         onSave(pdfBlob);
       }, "image/png");

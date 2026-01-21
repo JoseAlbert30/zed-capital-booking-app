@@ -31,7 +31,7 @@ export function PDFAnnotator({ pdfUrl, onSave, title }: PDFAnnotatorProps) {
 
     const loadPdfJs = async () => {
       try {
-        const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
+        const pdfjsLib = await import("pdfjs-dist");
         pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
         setPdfLib(pdfjsLib);
       } catch (error) {
@@ -165,7 +165,7 @@ export function PDFAnnotator({ pdfUrl, onSave, title }: PDFAnnotatorProps) {
       });
 
       const pdfBytes = await pdfDoc.save();
-      const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+      const pdfBlob = new Blob([new Uint8Array(pdfBytes)], { type: "application/pdf" });
       
       onSave(pdfBlob);
     } catch (error) {

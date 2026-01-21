@@ -1,18 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CustomerBooking } from "@/components/customer-booking";
-import { logoutUser, User, getUserProfile } from "@/lib/api";
+import { logoutUser, User, getUserProfile, Booking } from "@/lib/api";
 import { getEligibleUnits } from "@/lib/unit-api";
-
-interface Booking {
-  id: string;
-  date: Date;
-  time: string;
-  customerEmail: string;
-  status?: "confirmed" | "completed" | "cancelled";
-}
 
 type EligibleUnit = {
   id: number;
@@ -30,7 +22,7 @@ type EligibleUnit = {
   };
 };
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [userEmail, setUserEmail] = useState("");
@@ -97,11 +89,13 @@ export default function DashboardPage() {
         // Transform bookings to match component format
         if (userData.bookings && userData.bookings.length > 0) {
           const transformedBookings = userData.bookings.map((booking: any) => ({
-            id: booking.id.toString(),
-            date: new Date(booking.booked_date),
-            time: booking.booked_time,
-            customerEmail: userData.email,
+            id: booking.id,
+            user_id: booking.user_id,
+            booked_date: booking.booked_date,
+            booked_time: booking.booked_time,
             status: booking.status || 'confirmed',
+            created_at: booking.created_at,
+            updated_at: booking.updated_at,
           }));
           setBookings(transformedBookings);
         }
@@ -184,10 +178,12 @@ export default function DashboardPage() {
       
       const newBooking: Booking = {
         id: data.booking.id,
-        date: new Date(data.booking.booked_date),
-        time: data.booking.booked_time,
-        customerEmail: currentUser.email,
+        user_id: data.booking.user_id,
+        booked_date: data.booking.booked_date,
+        booked_time: data.booking.booked_time,
         status: data.booking.status || 'confirmed',
+        created_at: data.booking.created_at,
+        updated_at: data.booking.updated_at,
       };
 
       setBookings([...bookings, newBooking]);
@@ -206,8 +202,8 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDeleteBooking = (id: string) => {
-    setBookings(bookings.filter((booking) => booking.id !== id));
+  const handleDeleteBooking = (id: number | string) => {
+    setBookings(bookings.filter((booking) => booking.id !== Number(id)));
   };
 
   if (isLoading) {
@@ -235,5 +231,20 @@ export default function DashboardPage() {
       onSelectUnit={setSelectedUnitId}
       isFromBookingLink={isFromBookingLink}
     />
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="text-white text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    }>
+      <DashboardPageContent />
+    </Suspense>
   );
 }
