@@ -1,0 +1,26 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Frontend EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            set -e
+            cd /var/www/zed-capital-booking-app
+            git fetch --all
+            git reset --hard origin/main
+            npm ci
+            npm run build
+            pm2 restart zed-booking-app --update-env || pm2 start npm --name zed-booking-app -- start
+            pm2 save
+            sudo systemctl reload nginx
