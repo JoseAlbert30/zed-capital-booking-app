@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { getUnitById, downloadServiceChargeAcknowledgement, downloadNOCHandover } from "@/lib/api";
+import { getUnitById, downloadServiceChargeAcknowledgement, downloadUtilitiesGuide, downloadNOCHandover } from "@/lib/api";
 import { getStorageUrl, API_BASE_URL } from "@/config/api";
 import { 
   updateUnitPaymentStatus, 
@@ -1749,6 +1749,44 @@ export default function UnitDetailsPage() {
                   </Button>
                   <p className="text-xs text-gray-500 mt-1">
                     This template is included in the initial handover notice and auto-filled with owner information.
+                  </p>
+                </div>
+
+                {/* Utilities Registration Guide */}
+                <div className="border-t border-gray-200 pt-4">
+                  <Label className="text-sm font-medium mb-2 block">Utilities Registration Guide</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start gap-2 hover:bg-orange-50 hover:border-orange-500"
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem("authToken");
+                        if (!token) {
+                          toast.error("Authentication required");
+                          return;
+                        }
+                        const blob = await downloadUtilitiesGuide(unit.id, token);
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = `Utilities_Registration_Guide_${unit.unit}.pdf`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(url);
+                        toast.success("PDF downloaded successfully!");
+                      } catch (error) {
+                        toast.error("Failed to download PDF");
+                        console.error(error);
+                      }
+                    }}
+                  >
+                    <Download className="w-4 h-4 text-orange-600" />
+                    <span className="text-sm">Download Utilities Registration Guide (Pre-filled)</span>
+                  </Button>
+                  <p className="text-xs text-gray-500 mt-1">
+                    This guide is included in the initial handover notice and auto-filled with DEWA premise number.
                   </p>
                 </div>
 

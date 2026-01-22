@@ -1345,6 +1345,28 @@ export async function downloadServiceChargeAcknowledgement(
   }
 }
 
+export async function downloadUtilitiesGuide(
+  unitId: number,
+  token: string
+): Promise<Blob> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/units/${unitId}/utilities-guide`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate utilities guide PDF");
+    }
+
+    return await response.blob();
+  } catch (error) {
+    throw error;
+  }
+}
+
 export async function downloadNOCHandover(
   unitId: number,
   token: string

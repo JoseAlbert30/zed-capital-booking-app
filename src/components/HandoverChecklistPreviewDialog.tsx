@@ -640,13 +640,16 @@ export function HandoverChecklistPreviewDialog({
                     <div className="space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Deficiencies list issued/signed:</label>
-                            <input
-                                type="text"
+                            <select
                                 value={deficienciesIssued}
                                 onChange={(e) => setDeficienciesIssued(e.target.value)}
-                                placeholder="Enter deficiencies information..."
                                 className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                            >
+                                <option value="">Select option...</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                                <option value="Not Applicable">Not Applicable</option>
+                            </select>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Remarks:</label>

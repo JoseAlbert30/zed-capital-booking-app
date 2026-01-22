@@ -388,3 +388,36 @@ export async function validateHandoverRequirements(
     throw error;
   }
 }
+
+/**
+ * Download Utilities Registration Guide PDF
+ */
+export async function downloadUtilitiesGuide(
+  unitId: number,
+  token: string
+): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/units/${unitId}/utilities-guide`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to download utilities guide");
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Utilities_Registration_Guide_Unit_${unitId}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    throw error;
+  }
+}

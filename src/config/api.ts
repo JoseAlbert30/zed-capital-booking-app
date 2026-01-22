@@ -12,7 +12,7 @@
  * - Production: https://api.yourdomain.com/api
  */
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.157:8000/api";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 /**
  * Get the base URL for storage files
