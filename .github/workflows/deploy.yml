@@ -18,10 +18,31 @@ jobs:
           script: |
             set -e
             cd /var/www/zed-capital-booking-app
+            
+            echo "Fetching latest code..."
             git fetch --all
             git reset --hard origin/main
+            
+            echo "Installing dependencies..."
             npm ci
+            
+            echo "Building Next.js app..."
             npm run build
+            
+            echo "Checking if .next directory exists..."
+            if [ ! -d ".next" ]; then
+              echo "ERROR: .next directory not found after build!"
+              exit 1
+            fi
+            
+            echo "Setting permissions..."
+            chmod -R 755 .next
+            
+            echo "Restarting PM2..."
             pm2 restart zed-booking-app --update-env || pm2 start npm --name zed-booking-app -- start
             pm2 save
+            
+            echo "Reloading Nginx..."
             sudo systemctl reload nginx
+            
+            echo "Deployment complete!"
