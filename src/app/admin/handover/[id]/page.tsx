@@ -894,7 +894,7 @@ export default function HandoverCompletionPage() {
                       <iframe 
                         src={handoverDeclarationPreview} 
                         className="w-full h-96 border-0"
-                        title="Declaration Preview"
+                        title="Declaration Previews"
                       />
                     </div>
                   )}
