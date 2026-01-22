@@ -47,7 +47,7 @@ export async function updateUnitPaymentStatus(
       formData.append("receipt", receiptFile);
     }
 
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/payment-status`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/payment-status`, {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -74,7 +74,7 @@ export async function addUnitRemark(
   token: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/remarks`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/remarks`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -105,7 +105,7 @@ export async function sendUnitSOAEmail(
     const formData = new FormData();
     formData.append("soa", soaFile);
 
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/send-soa`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/send-soa`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -131,7 +131,7 @@ export async function sendUnitHandoverEmail(
   token: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/send-handover-email`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/send-handover-email`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -157,7 +157,7 @@ export async function getUnitHandoverStatus(
   token: string
 ): Promise<HandoverStatus> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/handover-status`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/handover-status`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -184,7 +184,7 @@ export async function updateUnitMortgageStatus(
   token: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/mortgage-status`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/mortgage-status`, {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -211,7 +211,7 @@ export async function sendUnitBookingLink(
   token: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/send-booking-link`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/send-booking-link`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -243,7 +243,7 @@ export async function uploadUnitAttachment(
     formData.append("file", file);
     formData.append("type", type);
 
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/upload-attachment`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/upload-attachment`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -270,7 +270,7 @@ export async function deleteUnitAttachment(
   token: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/attachments/${attachmentId}`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/attachments/${attachmentId}`, {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -292,7 +292,7 @@ export async function deleteUnitAttachment(
  */
 export async function getEligibleUnits(token: string): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/bookings/eligible-units`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/eligible-units`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -317,7 +317,7 @@ export async function previewDeveloperRequirements(
   token: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/developer-requirements-preview`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/developer-requirements-preview`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -343,7 +343,7 @@ export async function sendRequirementsToDeveloper(
   token: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/send-to-developer`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/send-to-developer`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -370,7 +370,7 @@ export async function validateHandoverRequirements(
   token: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/validate-handover-requirements`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/validate-handover-requirements`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -397,7 +397,7 @@ export async function downloadUtilitiesGuide(
   token: string
 ): Promise<void> {
   try {
-    const response = await fetch(`${API_BASE_URL}/units/${unitId}/utilities-guide`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/utilities-guide`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,

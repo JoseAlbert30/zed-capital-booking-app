@@ -1481,7 +1481,8 @@ export default function UnitDetailsPage() {
           </DialogHeader>
           <div className="flex-1 overflow-auto bg-gray-50 rounded-lg p-4">
             {viewingDocument && (() => {
-              const fileUrl = viewingDocument.full_url;
+              // Force HTTPS for iframe security (browsers block mixed content)
+              const fileUrl = viewingDocument.full_url?.replace(/^http:\/\//i, 'https://');
               
               if (!fileUrl) {
                 return (
