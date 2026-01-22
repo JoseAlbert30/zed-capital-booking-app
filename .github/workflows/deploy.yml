@@ -27,13 +27,25 @@ jobs:
             npm ci
             
             echo "Building Next.js app..."
-            npm run build
+            npm run build 2>&1 | tee build.log
+            BUILD_EXIT_CODE=${PIPESTATUS[0]}
+            
+            if [ $BUILD_EXIT_CODE -ne 0 ]; then
+              echo "ERROR: Build failed with exit code $BUILD_EXIT_CODE"
+              cat build.log
+              exit 1
+            fi
             
             echo "Checking if .next directory exists..."
             if [ ! -d ".next" ]; then
               echo "ERROR: .next directory not found after build!"
+              echo "Build log:"
+              cat build.log
+              ls -la
               exit 1
             fi
+            
+            echo ".next directory found with $(du -sh .next | cut -f1)"
             
             echo "Setting permissions..."
             chmod -R 755 .next
