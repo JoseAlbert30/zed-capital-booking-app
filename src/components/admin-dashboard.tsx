@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { Separator } from "./ui/separator";
 import { Badge } from "./ui/badge";
 import { PDFAnnotator } from "./pdf-annotator-canvas";
+import { EmailProgressPopup } from "./EmailProgressPopup";
+import { SOAProgressPopup } from "./SOAProgressPopup";
 
 interface Booking {
   id: string;
@@ -189,6 +191,104 @@ export function AdminDashboard({
   const [bulkHandoverDialogOpen, setBulkHandoverDialogOpen] = useState(false);
   const [selectedUnitsForHandover, setSelectedUnitsForHandover] = useState<Set<number>>(new Set());
   const [sendingHandovers, setSendingHandovers] = useState(false);
+  
+  // Email progress tracking
+  const [emailProgressBatchId, setEmailProgressBatchId] = useState<string | null>(null);
+  const [emailProgressOpen, setEmailProgressOpen] = useState(false);
+  const [checkingEmailProgress, setCheckingEmailProgress] = useState(false);
+  
+  // SOA generation progress tracking
+  const [soaProgressBatchId, setSOAProgressBatchId] = useState<string | null>(null);
+  const [soaProgressOpen, setSOAProgressOpen] = useState(false);
+  const [generatingSOAs, setGeneratingSOAs] = useState(false);
+  const [checkingSOAProgress, setCheckingSOAProgress] = useState(false);
+  
+  // SOA regeneration confirmation
+  const [soaRegenerationDialogOpen, setSOARegenerationDialogOpen] = useState(false);
+  const [soaRegenerationData, setSOARegenerationData] = useState<{ unitsWithSoa: number; unitsWithoutSoa: number } | null>(null);
+
+  // Check for active email batch
+  const checkForActiveEmailBatch = async () => {
+    setCheckingEmailProgress(true);
+    
+    // First check if we have a stored batch ID
+    const storedBatchId = localStorage.getItem('currentEmailBatchId');
+    
+    if (storedBatchId) {
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/units/handover-batch/${storedBatchId}/progress`,
+          {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
+        );
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // If batch is still in progress or just completed, show it
+          if (data.batch.status !== 'completed' || data.batch.failed_count > 0) {
+            setEmailProgressBatchId(storedBatchId);
+            setEmailProgressOpen(true);
+          } else {
+            // Batch is completed with no failures, clear storage
+            localStorage.removeItem('currentEmailBatchId');
+            toast.info('No active email batches found');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking email batch:', error);
+        toast.error('Failed to check batch status');
+      }
+    } else {
+      toast.info('No active email batches found');
+    }
+    
+    setCheckingEmailProgress(false);
+  };
+
+  // Check for active SOA generation batch
+  const checkForActiveSOABatch = async () => {
+    setCheckingSOAProgress(true);
+    
+    // First check if we have a stored batch ID
+    const storedBatchId = localStorage.getItem('currentSOABatchId');
+    
+    if (storedBatchId) {
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/units/soa-batch/${storedBatchId}/progress`,
+          {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.batch.status !== 'completed') {
+            // Active batch found
+            setSOAProgressBatchId(storedBatchId);
+            setSOAProgressOpen(true);
+            setCheckingSOAProgress(false);
+            return;
+          } else if (data.success && data.batch.status === 'completed') {
+            // Batch completed, clear from localStorage
+            localStorage.removeItem('currentSOABatchId');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking batch:', error);
+      }
+    }
+    
+    // No active batch found
+    toast.info('No active SOA generation process found');
+    setCheckingSOAProgress(false);
+  };
 
   // Helper function to get property ID by project name
   const getPropertyIdByName = (projectName: string): number | null => {
@@ -288,6 +388,29 @@ export function AdminDashboard({
   const userProjects = Array.from(
     new Set(users.flatMap(u => u.units?.map(unit => unit.property.project_name) || []))
   ).filter(Boolean);
+
+  // Fetch all properties for bulk upload
+  const [allProperties, setAllProperties] = useState<Array<{id: number; project_name: string}>>([]);
+  
+  useEffect(() => {
+    const fetchProperties = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/properties`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setAllProperties(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch properties:', error);
+      }
+    };
+    fetchProperties();
+  }, []);
 
   // Reset pagination when users change
   useEffect(() => {
@@ -895,7 +1018,7 @@ export function AdminDashboard({
               <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${
                 activeTab === "users" ? "bg-white text-black" : "bg-gray-300 text-gray-700"
               }`}>
-                {users.length}
+                {allUnitsForListing.length}
               </span>
             </Button>
             <Button
@@ -919,7 +1042,7 @@ export function AdminDashboard({
             </Button>
           </div>
           
-          <div className="flex gap-2">
+          {/* <div className="flex gap-2">
             {activeTab === "users" && (
               <>
                 <Button
@@ -939,7 +1062,7 @@ export function AdminDashboard({
                 </Button>
               </>
             )}
-          </div>
+          </div> */}
         </div>
 
         {/* Bookings Tab */}
@@ -1195,6 +1318,80 @@ export function AdminDashboard({
                   >
                     <Upload className="w-4 h-4 mr-2" />
                     Bulk Upload SOA
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      setGeneratingSOAs(true);
+                      try {
+                        // First check SOA status
+                        const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/check-soa-status`, {
+                          headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                          },
+                        });
+
+                        if (!statusResponse.ok) {
+                          throw new Error('Failed to check SOA status');
+                        }
+
+                        const statusResult = await statusResponse.json();
+                        
+                        // If all units have SOAs, show regeneration dialog
+                        if (statusResult.units_without_soa === 0 && statusResult.units_with_soa > 0) {
+                          setSOARegenerationData({
+                            unitsWithSoa: statusResult.units_with_soa,
+                            unitsWithoutSoa: statusResult.units_without_soa
+                          });
+                          setSOARegenerationDialogOpen(true);
+                          setGeneratingSOAs(false);
+                          return;
+                        }
+
+                        // Some units are missing SOAs, proceed with generation of missing ones
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/bulk-generate-soa`, {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json',
+                          },
+                        });
+
+                        const result = await response.json();
+
+                        if (response.ok) {
+                          toast.success(result.message || `Queued ${result.queued_count} SOA(s) for generation`);
+                          
+                          if (result.batch_id && result.queued_count > 0) {
+                            localStorage.setItem('currentSOABatchId', result.batch_id);
+                            setSOAProgressBatchId(result.batch_id);
+                            setSOAProgressOpen(true);
+                          }
+                          
+                          fetchAllUnitsForListing();
+                        } else {
+                          toast.error(result.message || 'Failed to queue SOA generation');
+                        }
+                      } catch (error) {
+                        console.error('Error generating SOAs:', error);
+                        toast.error('Failed to queue SOA generation');
+                      }
+                      setGeneratingSOAs(false);
+                    }}
+                    className="bg-purple-600 text-white hover:bg-purple-700"
+                    size="sm"
+                    disabled={generatingSOAs}
+                  >
+                    {generatingSOAs ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-4 h-4 mr-2" />
+                        Generate SOAs
+                      </>
+                    )}
                   </Button>
                   <Button
                     onClick={() => setBulkHandoverDialogOpen(true)}
@@ -2732,6 +2929,14 @@ export function AdminDashboard({
 
                   if (response.ok) {
                     toast.success(result.message || `Queued ${result.queued_count} handover email(s)`);
+                    
+                    // Show progress popup if we got a batch_id
+                    if (result.batch_id) {
+                      localStorage.setItem('currentEmailBatchId', result.batch_id);
+                      setEmailProgressBatchId(result.batch_id);
+                      setEmailProgressOpen(true);
+                    }
+                    
                     if (result.skipped && result.skipped.length > 0) {
                       console.log('Skipped units:', result.skipped);
                       toast.warning(`${result.skipped.length} unit(s) were skipped`);
@@ -2954,9 +3159,9 @@ export function AdminDashboard({
                   <SelectValue placeholder="Select project for all units in this file" />
                 </SelectTrigger>
                 <SelectContent>
-                  {userProjects.map((project) => (
-                    <SelectItem key={project} value={project}>
-                      {project}
+                  {allProperties.map((property) => (
+                    <SelectItem key={property.id} value={property.id.toString()}>
+                      {property.project_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -3012,8 +3217,9 @@ export function AdminDashboard({
                     return;
                   }
 
-                  const propertyId = getPropertyIdByName(selectedProjectForBulk);
-                  if (!propertyId) {
+                  // selectedProjectForBulk is already the property ID as a string
+                  const propertyId = parseInt(selectedProjectForBulk);
+                  if (!propertyId || isNaN(propertyId)) {
                     toast.error("Failed to find property ID");
                     return;
                   }
@@ -3310,13 +3516,13 @@ export function AdminDashboard({
         </DialogContent>
       </Dialog>
 
-      {/* Test Celebration Button - Fixed position */}
+      {/* Test Celebration Button - Fixed position
       <Button
         onClick={() => setShowCelebration(true)}
         className="fixed bottom-4 right-4 bg-purple-600 hover:bg-purple-700 text-white shadow-lg z-50"
       >
         🎉 Test Celebration
-      </Button>
+      </Button> */}
 
       {/* Celebration Dialog */}
       <Dialog open={showCelebration} onOpenChange={setShowCelebration}>
@@ -3427,6 +3633,180 @@ export function AdminDashboard({
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Progress Popup */}
+      <EmailProgressPopup
+        batchId={emailProgressBatchId}
+        open={emailProgressOpen}
+        onOpenChange={(open) => {
+          setEmailProgressOpen(open);
+          // Clear batch ID from localStorage when manually closing completed batch
+          if (!open && emailProgressBatchId) {
+            const checkCompletion = async () => {
+              try {
+                const response = await fetch(
+                  `${process.env.NEXT_PUBLIC_API_URL}/units/handover-batch/${emailProgressBatchId}/progress`,
+                  {
+                    headers: {
+                      Authorization: `Bearer ${authToken}`,
+                    },
+                  }
+                );
+                const data = await response.json();
+                if (data.success && data.batch.status === 'completed') {
+                  localStorage.removeItem('currentEmailBatchId');
+                }
+              } catch (error) {
+                console.error('Error checking batch status:', error);
+              }
+            };
+            checkCompletion();
+          }
+        }}
+      />
+
+      {/* SOA Generation Progress Popup */}
+      <SOAProgressPopup
+        batchId={soaProgressBatchId}
+        open={soaProgressOpen}
+        onOpenChange={(open) => {
+          setSOAProgressOpen(open);
+          // Clear batch ID from localStorage when manually closing completed batch
+          if (!open && soaProgressBatchId) {
+            const checkCompletion = async () => {
+              try {
+                const response = await fetch(
+                  `${process.env.NEXT_PUBLIC_API_URL}/units/soa-batch/${soaProgressBatchId}/progress`,
+                  {
+                    headers: {
+                      Authorization: `Bearer ${authToken}`,
+                    },
+                  }
+                );
+                const data = await response.json();
+                if (data.success && data.batch.status === 'completed') {
+                  localStorage.removeItem('currentSOABatchId');
+                }
+              } catch (error) {
+                console.error('Error checking batch status:', error);
+              }
+            };
+            checkCompletion();
+          }
+        }}
+        onComplete={() => {
+          // Refresh the units table when SOA generation completes
+          fetchAllUnitsForListing();
+        }}
+      />
+
+      {/* Sticky Track Progress Buttons */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
+        <Button
+          onClick={checkForActiveEmailBatch}
+          disabled={checkingEmailProgress}
+          className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg rounded-full px-6 py-6 flex items-center gap-2"
+          size="lg"
+        >
+          {checkingEmailProgress ? (
+            <>
+              <RefreshCw className="w-5 h-5 animate-spin" />
+              <span>Checking...</span>
+            </>
+          ) : (
+            <>
+              <Mail className="w-5 h-5" />
+              <span>Track Email Progress</span>
+            </>
+          )}
+        </Button>
+        <Button
+          onClick={checkForActiveSOABatch}
+          disabled={checkingSOAProgress}
+          className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg rounded-full px-6 py-6 flex items-center gap-2"
+          size="lg"
+        >
+          {checkingSOAProgress ? (
+            <>
+              <RefreshCw className="w-5 h-5 animate-spin" />
+              Checking...
+            </>
+          ) : (
+            <>
+              <FileText className="w-5 h-5" />
+              Track SOA Progress
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* SOA Regeneration Confirmation Dialog */}
+      <Dialog open={soaRegenerationDialogOpen} onOpenChange={setSOARegenerationDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Regenerate SOAs?</DialogTitle>
+            <DialogDescription>
+              All {soaRegenerationData?.unitsWithSoa || 0} units already have SOAs generated.
+              <br /><br />
+              Do you want to regenerate all SOAs? This will delete the existing SOAs and create new ones.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSOARegenerationDialogOpen(false);
+                setSOARegenerationData(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setSOARegenerationDialogOpen(false);
+                setGeneratingSOAs(true);
+                try {
+                  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/bulk-generate-soa`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${authToken}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      regenerate: true
+                    }),
+                  });
+
+                  const result = await response.json();
+
+                  if (response.ok) {
+                    toast.success(result.message || `Queued ${result.queued_count} SOA(s) for regeneration`);
+                    
+                    if (result.batch_id && result.queued_count > 0) {
+                      // Store batch ID in localStorage
+                      localStorage.setItem('currentSOABatchId', result.batch_id);
+                      setSOAProgressBatchId(result.batch_id);
+                      setSOAProgressOpen(true);
+                    }
+                    
+                    fetchAllUnitsForListing();
+                  } else {
+                    toast.error(result.message || 'Failed to queue SOA regeneration');
+                  }
+                } catch (error) {
+                  console.error('Error regenerating SOAs:', error);
+                  toast.error('Failed to queue SOA regeneration');
+                }
+                setGeneratingSOAs(false);
+                setSOARegenerationData(null);
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Yes, Regenerate All
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
