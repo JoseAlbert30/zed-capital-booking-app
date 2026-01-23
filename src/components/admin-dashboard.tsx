@@ -207,6 +207,12 @@ export function AdminDashboard({
   const [soaRegenerationDialogOpen, setSOARegenerationDialogOpen] = useState(false);
   const [soaRegenerationData, setSOARegenerationData] = useState<{ unitsWithSoa: number; unitsWithoutSoa: number } | null>(null);
 
+  // Payment details upload state
+  const [paymentDetailsDialogOpen, setPaymentDetailsDialogOpen] = useState(false);
+  const [paymentDetailsFile, setPaymentDetailsFile] = useState<File | null>(null);
+  const [uploadingPaymentDetails, setUploadingPaymentDetails] = useState(false);
+  const [selectedPropertyForPaymentDetails, setSelectedPropertyForPaymentDetails] = useState<string>("");
+
   // Check for active email batch
   const checkForActiveEmailBatch = async () => {
     setCheckingEmailProgress(true);
@@ -1320,62 +1326,9 @@ export function AdminDashboard({
                     Bulk Upload SOA
                   </Button>
                   <Button
-                    onClick={async () => {
-                      setGeneratingSOAs(true);
-                      try {
-                        // First check SOA status
-                        const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/check-soa-status`, {
-                          headers: {
-                            'Authorization': `Bearer ${authToken}`,
-                          },
-                        });
-
-                        if (!statusResponse.ok) {
-                          throw new Error('Failed to check SOA status');
-                        }
-
-                        const statusResult = await statusResponse.json();
-                        
-                        // If all units have SOAs, show regeneration dialog
-                        if (statusResult.units_without_soa === 0 && statusResult.units_with_soa > 0) {
-                          setSOARegenerationData({
-                            unitsWithSoa: statusResult.units_with_soa,
-                            unitsWithoutSoa: statusResult.units_without_soa
-                          });
-                          setSOARegenerationDialogOpen(true);
-                          setGeneratingSOAs(false);
-                          return;
-                        }
-
-                        // Some units are missing SOAs, proceed with generation of missing ones
-                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/bulk-generate-soa`, {
-                          method: 'POST',
-                          headers: {
-                            'Authorization': `Bearer ${authToken}`,
-                            'Content-Type': 'application/json',
-                          },
-                        });
-
-                        const result = await response.json();
-
-                        if (response.ok) {
-                          toast.success(result.message || `Queued ${result.queued_count} SOA(s) for generation`);
-                          
-                          if (result.batch_id && result.queued_count > 0) {
-                            localStorage.setItem('currentSOABatchId', result.batch_id);
-                            setSOAProgressBatchId(result.batch_id);
-                            setSOAProgressOpen(true);
-                          }
-                          
-                          fetchAllUnitsForListing();
-                        } else {
-                          toast.error(result.message || 'Failed to queue SOA generation');
-                        }
-                      } catch (error) {
-                        console.error('Error generating SOAs:', error);
-                        toast.error('Failed to queue SOA generation');
-                      }
-                      setGeneratingSOAs(false);
+                    onClick={() => {
+                      // Show payment details upload dialog first
+                      setPaymentDetailsDialogOpen(true);
                     }}
                     className="bg-purple-600 text-white hover:bg-purple-700"
                     size="sm"
@@ -3809,6 +3762,184 @@ export function AdminDashboard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Payment Details Upload Dialog */}
+      <Dialog open={paymentDetailsDialogOpen} onOpenChange={setPaymentDetailsDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Upload Payment Details for SOA Generation</DialogTitle>
+            <DialogDescription>
+              Upload a CSV/Excel file containing payment details for all units. This data will be used to generate professional Statements of Account.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Select Property</label>
+              <Select 
+                value={selectedPropertyForPaymentDetails} 
+                onValueChange={setSelectedPropertyForPaymentDetails}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select property" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(new Set(allUnitsForListing.map(u => u.property?.id).filter(Boolean))).map(propertyId => {
+                    const unit = allUnitsForListing.find(u => u.property?.id === propertyId);
+                    return unit?.property ? (
+                      <SelectItem key={propertyId} value={propertyId.toString()}>
+                        {unit.property.project_name}
+                      </SelectItem>
+                    ) : null;
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Upload CSV/Excel File</label>
+              <Input
+                type="file"
+                accept=".csv,.xlsx"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setPaymentDetailsFile(file);
+                  }
+                }}
+                className="mt-1"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Expected columns: Unit Number, Buyer1, Total Unit Price, 4% DLD FEES, ADMIN FEE 5000+VAT, Amount to Pay, Total Amount Paid, Outstanding Amount To Pay
+              </p>
+            </div>
+
+            {paymentDetailsFile && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded">
+                <p className="text-sm text-green-800">
+                  <strong>File selected:</strong> {paymentDetailsFile.name}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPaymentDetailsDialogOpen(false);
+                setPaymentDetailsFile(null);
+                setSelectedPropertyForPaymentDetails("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!paymentDetailsFile || !selectedPropertyForPaymentDetails) {
+                  toast.error('Please select a property and upload a file');
+                  return;
+                }
+
+                setUploadingPaymentDetails(true);
+                try {
+                  const formData = new FormData();
+                  formData.append('file', paymentDetailsFile);
+                  formData.append('property_id', selectedPropertyForPaymentDetails);
+
+                  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/upload-payment-details`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${authToken}`,
+                    },
+                    body: formData,
+                  });
+
+                  const result = await response.json();
+
+                  if (response.ok) {
+                    toast.success(result.message || `Updated payment details for ${result.updated_count} unit(s)`);
+                    setPaymentDetailsDialogOpen(false);
+                    setPaymentDetailsFile(null);
+                    setSelectedPropertyForPaymentDetails("");
+                    
+                    // Now proceed with SOA generation
+                    await proceedWithSOAGeneration();
+                  } else {
+                    toast.error(result.message || 'Failed to upload payment details');
+                  }
+                } catch (error) {
+                  console.error('Error uploading payment details:', error);
+                  toast.error('Failed to upload payment details');
+                }
+                setUploadingPaymentDetails(false);
+              }}
+              disabled={!paymentDetailsFile || !selectedPropertyForPaymentDetails || uploadingPaymentDetails}
+            >
+              {uploadingPaymentDetails ? 'Uploading...' : 'Upload & Generate SOAs'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+
+  // Function to proceed with SOA generation after payment details upload
+  async function proceedWithSOAGeneration() {
+    setGeneratingSOAs(true);
+    try {
+      // First check SOA status
+      const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/check-soa-status`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      if (!statusResponse.ok) {
+        throw new Error('Failed to check SOA status');
+      }
+
+      const statusResult = await statusResponse.json();
+      
+      // If all units have SOAs, show regeneration dialog
+      if (statusResult.units_without_soa === 0 && statusResult.units_with_soa > 0) {
+        setSOARegenerationData({
+          unitsWithSoa: statusResult.units_with_soa,
+          unitsWithoutSoa: statusResult.units_without_soa
+        });
+        setSOARegenerationDialogOpen(true);
+        setGeneratingSOAs(false);
+        return;
+      }
+
+      // Some units are missing SOAs, proceed with generation of missing ones
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/bulk-generate-soa`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast.success(result.message || `Queued ${result.queued_count} SOA(s) for generation`);
+        
+        if (result.batch_id && result.queued_count > 0) {
+          localStorage.setItem('currentSOABatchId', result.batch_id);
+          setSOAProgressBatchId(result.batch_id);
+          setSOAProgressOpen(true);
+        }
+        
+        fetchAllUnitsForListing();
+      } else {
+        toast.error(result.message || 'Failed to queue SOA generation');
+      }
+    } catch (error) {
+      console.error('Error generating SOAs:', error);
+      toast.error('Failed to queue SOA generation');
+    }
+    setGeneratingSOAs(false);
+  }
 }

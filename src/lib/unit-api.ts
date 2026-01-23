@@ -421,3 +421,39 @@ export async function downloadUtilitiesGuide(
     throw error;
   }
 }
+
+/**
+ * Update payment details for a single unit and generate SOA
+ */
+export async function updateUnitPaymentDetailsAndGenerateSOA(
+  unitId: number,
+  paymentDetails: {
+    total_unit_price: number | null;
+    dld_fees: number | null;
+    admin_fee: number | null;
+    amount_to_pay: number | null;
+    total_amount_paid: number | null;
+    outstanding_amount: number | null;
+  },
+  token: string
+): Promise<any> {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/${unitId}/payment-details`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(paymentDetails),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || "Failed to update payment details");
+    }
+
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}

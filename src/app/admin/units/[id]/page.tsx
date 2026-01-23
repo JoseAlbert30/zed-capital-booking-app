@@ -17,6 +17,7 @@ import {
   previewDeveloperRequirements,
   sendRequirementsToDeveloper,
   validateHandoverRequirements,
+  updateUnitPaymentDetailsAndGenerateSOA,
   HandoverStatus
 } from "@/lib/unit-api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -131,6 +132,18 @@ export default function UnitDetailsPage() {
   const [soaFile, setSoaFile] = useState<File | null>(null);
   const [uploadingSOA, setUploadingSOA] = useState(false);
   
+  // Payment details state
+  const [paymentDetailsDialogOpen, setPaymentDetailsDialogOpen] = useState(false);
+  const [paymentDetails, setPaymentDetails] = useState({
+    total_unit_price: null as number | null,
+    dld_fees: null as number | null,
+    admin_fee: null as number | null,
+    amount_to_pay: null as number | null,
+    total_amount_paid: null as number | null,
+    outstanding_amount: null as number | null,
+  });
+  const [updatingPaymentDetails, setUpdatingPaymentDetails] = useState(false);
+  
   // Handover state
   const [handoverStatus, setHandoverStatus] = useState<HandoverStatus | null>(null);
   const [uploadingHandover, setUploadingHandover] = useState<{[key: string]: boolean}>({});
@@ -215,6 +228,28 @@ export default function UnitDetailsPage() {
       toast.error(error.message || "Failed to upload SOA");
     } finally {
       setUploadingSOA(false);
+    }
+  };
+
+  const handleUpdatePaymentDetailsAndGenerateSOA = async () => {
+    if (!unit) return;
+
+    setUpdatingPaymentDetails(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        toast.error("You must be logged in");
+        return;
+      }
+
+      const result = await updateUnitPaymentDetailsAndGenerateSOA(unit.id, paymentDetails, token);
+      toast.success("Payment details updated and SOA generated successfully");
+      setPaymentDetailsDialogOpen(false);
+      await fetchUnitDetails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update payment details");
+    } finally {
+      setUpdatingPaymentDetails(false);
     }
   };
 
@@ -728,6 +763,41 @@ export default function UnitDetailsPage() {
 
           {/* Right Column */}
           <div className="space-y-6">
+            {/* Payment Details & SOA Generation */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="w-5 h-5" />
+                  Payment Details & SOA Generation
+                </CardTitle>
+                <CardDescription>
+                  Enter payment details to generate Statement of Account
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button 
+                  onClick={() => {
+                    // Pre-fill with current values if they exist
+                    if (unit) {
+                      setPaymentDetails({
+                        total_unit_price: (unit as any).total_unit_price || null,
+                        dld_fees: (unit as any).dld_fees || null,
+                        admin_fee: (unit as any).admin_fee || null,
+                        amount_to_pay: (unit as any).amount_to_pay || null,
+                        total_amount_paid: (unit as any).total_amount_paid || null,
+                        outstanding_amount: (unit as any).outstanding_amount || null,
+                      });
+                    }
+                    setPaymentDetailsDialogOpen(true);
+                  }}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Enter Payment Details & Generate SOA
+                </Button>
+              </CardContent>
+            </Card>
+
             {/* SOA Attachments */}
             <Card>
               <CardHeader>
@@ -1984,6 +2054,132 @@ export default function UnitDetailsPage() {
             >
               <Mail className="w-4 h-4 mr-2" />
               {sendingToDeveloper ? "Sending..." : "Send to Developer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Details Dialog */}
+      <Dialog open={paymentDetailsDialogOpen} onOpenChange={setPaymentDetailsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Enter Payment Details & Generate SOA</DialogTitle>
+            <DialogDescription>
+              Fill in the payment details for Unit {unit?.unit}. All fields are optional. Negative values are allowed for outstanding balance.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="total_unit_price">Total Unit Price (AED)</Label>
+              <Input
+                id="total_unit_price"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={paymentDetails.total_unit_price || ''}
+                onChange={(e) => setPaymentDetails({
+                  ...paymentDetails,
+                  total_unit_price: e.target.value ? parseFloat(e.target.value) : null
+                })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dld_fees">DLD Fees (AED)</Label>
+              <Input
+                id="dld_fees"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={paymentDetails.dld_fees || ''}
+                onChange={(e) => setPaymentDetails({
+                  ...paymentDetails,
+                  dld_fees: e.target.value ? parseFloat(e.target.value) : null
+                })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="admin_fee">Admin Fee (AED)</Label>
+              <Input
+                id="admin_fee"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={paymentDetails.admin_fee || ''}
+                onChange={(e) => setPaymentDetails({
+                  ...paymentDetails,
+                  admin_fee: e.target.value ? parseFloat(e.target.value) : null
+                })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="amount_to_pay">Total Amount to Pay (AED)</Label>
+              <Input
+                id="amount_to_pay"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={paymentDetails.amount_to_pay || ''}
+                onChange={(e) => setPaymentDetails({
+                  ...paymentDetails,
+                  amount_to_pay: e.target.value ? parseFloat(e.target.value) : null
+                })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="total_amount_paid">Total Amount Paid (AED)</Label>
+              <Input
+                id="total_amount_paid"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={paymentDetails.total_amount_paid || ''}
+                onChange={(e) => setPaymentDetails({
+                  ...paymentDetails,
+                  total_amount_paid: e.target.value ? parseFloat(e.target.value) : null
+                })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="outstanding_amount">Outstanding Balance (AED)</Label>
+              <Input
+                id="outstanding_amount"
+                type="number"
+                step="0.01"
+                placeholder="0.00 (negative for overpayment)"
+                value={paymentDetails.outstanding_amount || ''}
+                onChange={(e) => setPaymentDetails({
+                  ...paymentDetails,
+                  outstanding_amount: e.target.value ? parseFloat(e.target.value) : null
+                })}
+                className={paymentDetails.outstanding_amount && paymentDetails.outstanding_amount < 0 ? 'border-green-500' : ''}
+              />
+              <p className="text-xs text-gray-500">
+                Positive = amount due | Negative = overpaid | Zero = fully paid
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPaymentDetailsDialogOpen(false)}
+              disabled={updatingPaymentDetails}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdatePaymentDetailsAndGenerateSOA}
+              disabled={updatingPaymentDetails}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              {updatingPaymentDetails ? "Generating..." : "Update & Generate SOA"}
             </Button>
           </DialogFooter>
         </DialogContent>
