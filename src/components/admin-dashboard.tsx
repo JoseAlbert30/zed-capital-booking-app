@@ -10,7 +10,7 @@ import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Calendar } from "./ui/calendar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
-import { User, sendSOAEmail, cancelBooking, updateBooking, createUnit, bulkUploadUnits, createUserWithUnit, bulkUploadUsers, getAllUnits, completeHandover, getProjectTemplates, uploadHandoverFile, deleteHandoverFile, getSnaggingDefects, createSnaggingDefect, updateSnaggingDefect, deleteSnaggingDefect, downloadServiceChargeAcknowledgement } from "@/lib/api";
+import { User, sendSOAEmail, cancelBooking, updateBooking, createUnit, bulkUploadUnits, createUserWithUnit, bulkUploadUsers, getAllUnits, completeHandover, getProjectTemplates, uploadHandoverFile, deleteHandoverFile, getSnaggingDefects, createSnaggingDefect, updateSnaggingDefect, deleteSnaggingDefect, downloadServiceChargeAcknowledgement, downloadAllSOAs } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Input } from "./ui/input";
 import { toast } from "sonner";
@@ -202,6 +202,7 @@ export function AdminDashboard({
   const [soaProgressOpen, setSOAProgressOpen] = useState(false);
   const [generatingSOAs, setGeneratingSOAs] = useState(false);
   const [checkingSOAProgress, setCheckingSOAProgress] = useState(false);
+  const [downloadingAllSOAs, setDownloadingAllSOAs] = useState(false);
   
   // SOA regeneration confirmation
   const [soaRegenerationDialogOpen, setSOARegenerationDialogOpen] = useState(false);
@@ -294,6 +295,28 @@ export function AdminDashboard({
     // No active batch found
     toast.info('No active SOA generation process found');
     setCheckingSOAProgress(false);
+  };
+
+  // Download all SOAs as zip
+  const handleDownloadAllSOAs = async () => {
+    setDownloadingAllSOAs(true);
+    try {
+      const blob = await downloadAllSOAs(authToken);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `all-soas-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('All SOAs downloaded successfully');
+    } catch (error: any) {
+      console.error('Error downloading SOAs:', error);
+      toast.error(error.message || 'Failed to download SOAs');
+    } finally {
+      setDownloadingAllSOAs(false);
+    }
   };
 
   // Helper function to get property ID by project name
@@ -1317,6 +1340,24 @@ export function AdminDashboard({
                   </CardDescription>
                 </div>
                 <div className="flex gap-2">
+                  <Button
+                    onClick={handleDownloadAllSOAs}
+                    disabled={downloadingAllSOAs}
+                    className="bg-indigo-600 text-white hover:bg-indigo-700"
+                    size="sm"
+                  >
+                    {downloadingAllSOAs ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 mr-2" />
+                        Download All SOAs
+                      </>
+                    )}
+                  </Button>
                   <Button
                     onClick={() => setBulkSOADialogOpen(true)}
                     className="bg-blue-600 text-white hover:bg-blue-700"

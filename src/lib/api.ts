@@ -1388,3 +1388,25 @@ export async function downloadNOCHandover(
     throw error;
   }
 }
+
+export async function downloadAllSOAs(
+  token: string
+): Promise<Blob> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/units/download-all-soas`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to download SOAs");
+    }
+
+    return await response.blob();
+  } catch (error) {
+    throw error;
+  }
+}
