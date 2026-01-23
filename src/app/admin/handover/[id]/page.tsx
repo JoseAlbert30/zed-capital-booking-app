@@ -861,41 +861,50 @@ export default function HandoverCompletionPage() {
                       <div className="p-3 bg-purple-50 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-purple-600" />
-                          <span className="text-sm font-medium text-gray-700">Declaration Preview</span>
+                          <span className="text-sm font-medium text-gray-700">Declaration</span>
                         </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => window.open(handoverDeclarationPreview, '_blank')}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Open Full
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={async () => {
-                              try {
-                                await deleteHandoverFile(Number(bookingId), 'handover_declaration', authToken);
-                                setAnnotatedDeclaration(null);
-                                setHandoverDeclarationPreview(null);
-                                toast.success("Declaration deleted");
-                              } catch (error) {
-                                toast.error("Failed to delete declaration");
-                              }
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={async () => {
+                            try {
+                              await deleteHandoverFile(Number(bookingId), 'handover_declaration', authToken);
+                              setAnnotatedDeclaration(null);
+                              setHandoverDeclarationPreview(null);
+                              toast.success("Declaration deleted");
+                            } catch (error) {
+                              toast.error("Failed to delete declaration");
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
-                      <iframe 
-                        src={handoverDeclarationPreview} 
-                        className="w-full h-96 border-0"
-                        title="Declaration Previews"
-                      />
+                      <div className="p-4 space-y-2">
+                        <Button
+                          className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                          onClick={() => window.open(handoverDeclarationPreview, '_blank')}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Document
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = handoverDeclarationPreview;
+                            link.download = 'Declaration.pdf';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                          }}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Document
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1092,40 +1101,49 @@ export default function HandoverCompletionPage() {
                   {handoverChecklistPreview && (
                     <div className="border rounded-lg overflow-hidden">
                       <div className="p-3 bg-gray-100 flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-700">PDF Preview</span>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => window.open(handoverChecklistPreview, '_blank')}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Open Full
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={async () => {
-                              try {
-                                await deleteHandoverFile(Number(bookingId), 'handover_checklist', authToken);
-                                setAnnotatedChecklist(null);
-                                setHandoverChecklistPreview(null);
-                                toast.success("Checklist deleted");
-                              } catch (error) {
-                                toast.error("Failed to delete checklist");
-                              }
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                        <span className="text-sm font-medium text-gray-700">Handover Checklist</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={async () => {
+                            try {
+                              await deleteHandoverFile(Number(bookingId), 'handover_checklist', authToken);
+                              setAnnotatedChecklist(null);
+                              setHandoverChecklistPreview(null);
+                              toast.success("Checklist deleted");
+                            } catch (error) {
+                              toast.error("Failed to delete checklist");
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
-                      <iframe 
-                        src={handoverChecklistPreview} 
-                        className="w-full h-96 border-0"
-                        title="Handover Checklist Preview"
-                      />
+                      <div className="p-4 space-y-2">
+                        <Button
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                          onClick={() => window.open(handoverChecklistPreview, '_blank')}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Document
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = handoverChecklistPreview;
+                            link.download = 'Handover_Checklist.pdf';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                          }}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Document
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </CardContent>
