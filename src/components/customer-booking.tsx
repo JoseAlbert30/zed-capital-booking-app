@@ -240,6 +240,58 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
         </div>
       </div>
 
+      {/* Unit & Property Details (for booking link access) */}
+      {isFromBookingLink && selectedUnit && (
+        <div className="mb-12">
+          <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-4">Unit Details</h3>
+          <div className="space-y-4">
+            {/* Unit Information Card */}
+            <div className="bg-white/10 rounded-lg p-6 border border-white/10">
+              <div className="flex items-start gap-3 mb-4">
+                <Home className="w-6 h-6 text-white mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <h4 className="text-xl font-semibold mb-1">Unit {selectedUnit.unit}</h4>
+                  <p className="text-sm text-gray-300">{selectedUnit.property.project_name}</p>
+                </div>
+              </div>
+              
+              {/* Property Location */}
+              <div className="flex items-center gap-2 text-gray-300 mb-4 pb-4 border-b border-white/10">
+                <MapPin className="w-4 h-4 flex-shrink-0" />
+                <span className="text-sm">{selectedUnit.property.location}</span>
+              </div>
+
+              {/* Additional Property Details if available */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-400">Property Type</span>
+                  <span className="text-white font-medium">Residential</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-400">Status</span>
+                  <span className="text-green-300 font-medium flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4" />
+                    Ready for Handover
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Important Information Card */}
+            <div className="bg-white/10 rounded-lg p-6 border border-white/10">
+              <h4 className="font-semibold mb-3 flex items-center gap-2">
+                <Building2 className="w-5 h-5" />
+                About {selectedUnit.property.project_name}
+              </h4>
+              <p className="text-sm text-gray-300 leading-relaxed">
+                Your new home is located in one of Dubai's premier residential developments. 
+                We're excited to hand over your property and welcome you to the community.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Property Details */}
       {!isFromBookingLink && (
       <div>
