@@ -1662,14 +1662,13 @@ export function AdminDashboard({
                         ).length;
                         const clientTotalRequirements = 4;
                         
-                        // Developer requirements: 2 total
+                        // Developer requirements: 1 total
                         // 1. Developer NOC signed (developer_noc_signed)
-                        // 2. Service charge acknowledgement signed by developer (service_charge_ack_developer)
-                        const developerRequiredTypes = ['developer_noc_signed', 'service_charge_ack_developer'];
+                        const developerRequiredTypes = ['developer_noc_signed'];
                         const developerUploadedCount = developerRequiredTypes.filter(type => 
                           attachments.some((att: any) => att.type === type)
                         ).length;
-                        const developerTotalRequirements = 2;
+                        const developerTotalRequirements = 1;
                         
                         const allRequirementsMet = clientUploadedCount === clientTotalRequirements && 
                                                    developerUploadedCount === developerTotalRequirements;
