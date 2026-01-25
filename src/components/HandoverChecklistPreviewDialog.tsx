@@ -186,19 +186,23 @@ export function HandoverChecklistPreviewDialog({
                 staff_signature_image: staffSignature.image,
             };
             
-            const pdfBlob = await generateHandoverChecklistPDF(
+            // Backend now generates AND saves the PDF
+            const result = await generateHandoverChecklistPDF(
                 Number(booking.id),
                 authToken,
                 formData
             );
             
-            const filename = `Handover_Checklist_${booking.id}_${new Date().getTime()}.pdf`;
+            toast.success(result.message || "Checklist generated and saved successfully!");
             
+            // Notify parent if callback provided
             if (onGenerated) {
-                onGenerated(pdfBlob, filename);
+                // Create a dummy blob for compatibility with parent component
+                const dummyBlob = new Blob([], { type: "application/pdf" });
+                const filename = `Handover_Checklist_${booking.id}_${new Date().getTime()}.pdf`;
+                onGenerated(dummyBlob, filename);
             }
             
-            toast.success("Checklist generated successfully!");
             onOpenChange(false);
         } catch (error) {
             console.error("Error generating checklist:", error);
@@ -221,6 +225,10 @@ export function HandoverChecklistPreviewDialog({
             return;
         }
 
+        toast.info("Preview feature temporarily disabled. Click 'Generate & Save' to create the checklist.");
+        return;
+
+        /* Preview temporarily disabled since backend now saves directly
         try {
             setGeneratingPDF(true);
             
@@ -278,6 +286,7 @@ export function HandoverChecklistPreviewDialog({
         } finally {
             setGeneratingPDF(false);
         }
+        */
     };
 
     const renderSignatureCanvas = (

@@ -1449,16 +1449,14 @@ export default function HandoverCompletionPage() {
         open={showChecklistDialog}
         onOpenChange={setShowChecklistDialog}
         booking={booking}
-        onGenerated={async (pdfBlob, filename) => {
+        onGenerated={async () => {
           try {
-            const file = new File([pdfBlob], filename, { type: 'application/pdf' });
-            await uploadHandoverFile(Number(bookingId), 'handover_checklist', file, authToken);
-            setAnnotatedChecklist(file);
-            setHandoverChecklistPreview(URL.createObjectURL(pdfBlob));
-            toast.success("Checklist generated and uploaded!");
+            // Backend now saves the file automatically, so just refresh the booking data
+            await fetchBookingDetails(authToken);
+            toast.success("Checklist generated and saved successfully!");
           } catch (error) {
-            console.error("Upload error:", error);
-            toast.error("Failed to upload generated checklist");
+            console.error("Error refreshing booking:", error);
+            toast.error("Checklist saved but failed to refresh view");
           }
         }}
       />

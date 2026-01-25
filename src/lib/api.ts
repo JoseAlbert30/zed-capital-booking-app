@@ -414,7 +414,7 @@ export async function generateHandoverChecklistPDF(
   bookingId: number,
   token: string,
   formData: any
-): Promise<Blob> {
+): Promise<{ success: boolean; message: string; path: string; attachment: any }> {
   try {
     const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/generate-handover-checklist`, {
       method: "POST",
@@ -430,15 +430,7 @@ export async function generateHandoverChecklistPDF(
     }
 
     const data = await response.json();
-    
-    // Convert base64 to Blob
-    const binaryString = atob(data.pdf_content);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    
-    return new Blob([bytes], { type: "application/pdf" });
+    return data;
   } catch (error) {
     throw error;
   }
