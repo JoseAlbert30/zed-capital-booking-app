@@ -210,9 +210,11 @@ export function AdminDashboard({
 
   // Payment details upload state
   const [paymentDetailsDialogOpen, setPaymentDetailsDialogOpen] = useState(false);
+  const [withPho, setWithPho] = useState(false);
   const [paymentDetailsFile, setPaymentDetailsFile] = useState<File | null>(null);
   const [uploadingPaymentDetails, setUploadingPaymentDetails] = useState(false);
   const [selectedPropertyForPaymentDetails, setSelectedPropertyForPaymentDetails] = useState<string>("");
+  const [uploadedUnitIds, setUploadedUnitIds] = useState<number[]>([]);
 
   // Check for active email batch
   const checkForActiveEmailBatch = async () => {
@@ -3769,7 +3771,9 @@ export function AdminDashboard({
                       'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                      regenerate: true
+                      regenerate: true,
+                      with_pho: withPho,
+                      unit_ids: uploadedUnitIds.length > 0 ? uploadedUnitIds : undefined
                     }),
                   });
 
@@ -3851,9 +3855,27 @@ export function AdminDashboard({
                 className="mt-1"
               />
               <p className="text-xs text-gray-500 mt-2">
-                Expected columns: Unit Number, Buyer1, Total Unit Price, 4% DLD FEES, ADMIN FEE 5000+VAT, Amount to Pay, Total Amount Paid, Outstanding Amount To Pay
+                Expected columns: Unit Number, Buyer1, Total Unit Price, 4% DLD FEES, ADMIN FEE 5000+VAT, Amount to Pay, Total Amount Paid, {withPho ? 'Upon Completion Amount To Pay, Due After Completion' : 'Outstanding Amount To Pay'}
               </p>
             </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="withPho"
+                checked={withPho}
+                onChange={(e) => setWithPho(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <label htmlFor="withPho" className="text-sm font-medium">
+                With PHO (Payment Handover Option)
+              </label>
+            </div>
+            <p className="text-xs text-gray-500">
+              {withPho 
+                ? 'SOAs will show: Total Amount Paid, Upon Completion Amount To Pay, Due After Completion' 
+                : 'SOAs will show: Total Amount Paid, Outstanding Amount To Pay'}
+            </p>
 
             {paymentDetailsFile && (
               <div className="p-3 bg-green-50 border border-green-200 rounded">
@@ -3887,6 +3909,7 @@ export function AdminDashboard({
                   const formData = new FormData();
                   formData.append('file', paymentDetailsFile);
                   formData.append('property_id', selectedPropertyForPaymentDetails);
+                  formData.append('with_pho', withPho.toString());
 
                   const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/upload-payment-details`, {
                     method: 'POST',
@@ -3900,6 +3923,7 @@ export function AdminDashboard({
 
                   if (response.ok) {
                     toast.success(result.message || `Updated payment details for ${result.updated_count} unit(s)`);
+                    setUploadedUnitIds(result.updated_unit_ids || []);
                     setPaymentDetailsDialogOpen(false);
                     setPaymentDetailsFile(null);
                     setSelectedPropertyForPaymentDetails("");
@@ -3960,6 +3984,10 @@ export function AdminDashboard({
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          with_pho: withPho,
+          unit_ids: uploadedUnitIds.length > 0 ? uploadedUnitIds : undefined
+        }),
       });
 
       const result = await response.json();
