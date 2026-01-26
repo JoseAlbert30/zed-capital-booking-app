@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
-import { Calendar as CalendarIcon, LogOut, Users, Clock, Trash2, DollarSign, CheckCircle, AlertCircle, XCircle, Ban, Filter, ChevronDown, ChevronUp, Copy, RefreshCw, CalendarCheck, Eye, Search, ArrowUp, Link2, Mail, Send, FileText, Image as ImageIcon, Paperclip, Building2, Upload, Download, Check } from "lucide-react";
+import { Calendar as CalendarIcon, LogOut, Users, Clock, Trash2, DollarSign, CheckCircle, AlertCircle, XCircle, Ban, Filter, ChevronDown, ChevronUp, Copy, RefreshCw, CalendarCheck, Eye, Search, ArrowUp, Link2, Mail, Send, FileText, Image as ImageIcon, Paperclip, Building2, Upload, Download, Check, MoreVertical } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "./ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
@@ -122,6 +123,7 @@ export function AdminDashboard({
   const [uploadUnitsDialogOpen, setUploadUnitsDialogOpen] = useState(false);
   const [addUnitDialogOpen, setAddUnitDialogOpen] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadingBulkClients, setUploadingBulkClients] = useState(false);
   const [uploadUnitsFile, setUploadUnitsFile] = useState<File | null>(null);
   const [selectedProjectForClient, setSelectedProjectForClient] = useState<string>("");
   const [selectedProjectForBulk, setSelectedProjectForBulk] = useState<string>("");
@@ -191,6 +193,10 @@ export function AdminDashboard({
   const [bulkHandoverDialogOpen, setBulkHandoverDialogOpen] = useState(false);
   const [selectedUnitsForHandover, setSelectedUnitsForHandover] = useState<Set<number>>(new Set());
   const [sendingHandovers, setSendingHandovers] = useState(false);
+  
+  // Bulk send SOA email states
+  const [bulkSOAEmailDialogOpen, setBulkSOAEmailDialogOpen] = useState(false);
+  const [sendingSOAEmails, setSendingSOAEmails] = useState(false);
   
   // Email progress tracking
   const [emailProgressBatchId, setEmailProgressBatchId] = useState<string | null>(null);
@@ -1341,79 +1347,73 @@ export function AdminDashboard({
                     Manage units and their owners
                   </CardDescription>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleDownloadAllSOAs}
-                    disabled={downloadingAllSOAs}
-                    className="bg-indigo-600 text-white hover:bg-indigo-700"
-                    size="sm"
-                  >
-                    {downloadingAllSOAs ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                        Downloading...
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4 mr-2" />
-                        Download All SOAs
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={() => setBulkSOADialogOpen(true)}
-                    className="bg-blue-600 text-white hover:bg-blue-700"
-                    size="sm"
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    Bulk Upload SOA
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      // Show payment details upload dialog first
-                      setPaymentDetailsDialogOpen(true);
-                    }}
-                    className="bg-purple-600 text-white hover:bg-purple-700"
-                    size="sm"
-                    disabled={generatingSOAs}
-                  >
-                    {generatingSOAs ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="w-4 h-4 mr-2" />
-                        Generate SOAs
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={() => setBulkHandoverDialogOpen(true)}
-                    className="bg-green-600 text-white hover:bg-green-700"
-                    size="sm"
-                  >
-                    <Send className="w-4 h-4 mr-2" />
-                    Bulk Send Handover
-                  </Button>
-                  <Button
-                    onClick={() => setAddClientDialogOpen(true)}
-                    className="bg-white text-black hover:bg-gray-100"
-                    size="sm"
-                  >
-                    <Users className="w-4 h-4 mr-2" />
-                    Add Client
-                  </Button>
-                  <Button
-                    onClick={() => setBulkUploadDialogOpen(true)}
-                    className="bg-white text-black hover:bg-gray-100"
-                    size="sm"
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Bulk Upload
-                  </Button>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="bg-white text-black hover:bg-gray-100" size="sm">
+                      <MoreVertical className="w-4 h-4 mr-2" />
+                      Actions
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={handleDownloadAllSOAs} disabled={downloadingAllSOAs}>
+                      {downloadingAllSOAs ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          Downloading...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          Download All SOAs
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setBulkSOADialogOpen(true)}>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Bulk Upload SOA
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => setPaymentDetailsDialogOpen(true)}
+                      disabled={generatingSOAs}
+                    >
+                      {generatingSOAs ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Generate SOAs
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      onClick={() => setBulkHandoverDialogOpen(true)}
+                      disabled={selectedUnitsForHandover.size === 0}
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      Bulk Send Handover ({selectedUnitsForHandover.size})
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => setBulkSOAEmailDialogOpen(true)}
+                      disabled={selectedUnitsForHandover.size === 0}
+                    >
+                      <Mail className="w-4 h-4 mr-2" />
+                      Bulk Send SOA Email ({selectedUnitsForHandover.size})
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setAddClientDialogOpen(true)}>
+                      <Users className="w-4 h-4 mr-2" />
+                      Add Client
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setBulkUploadDialogOpen(true)}>
+                      <FileText className="w-4 h-4 mr-2" />
+                      Bulk Upload Clients
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -2968,6 +2968,159 @@ export function AdminDashboard({
         </DialogContent>
       </Dialog>
 
+      {/* Bulk Send SOA Email Dialog */}
+      <Dialog open={bulkSOAEmailDialogOpen} onOpenChange={(open) => {
+        setBulkSOAEmailDialogOpen(open);
+      }}>
+        <DialogContent className="border border-gray-200 max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Confirm Bulk Send SOA Email</DialogTitle>
+            <DialogDescription>
+              You are about to send SOA emails to the selected units. Each email will contain only the Statement of Account (SOA) document.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Summary */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <Mail className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div className="flex-1 space-y-2">
+                  <div className="font-medium text-gray-900">
+                    {selectedUnitsForHandover.size} unit{selectedUnitsForHandover.size !== 1 ? 's' : ''} selected
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Units: {Array.from(selectedUnitsForHandover).map(id => {
+                      const unit = allUnitsForListing.find(u => u.id === id);
+                      return unit?.unit;
+                    }).filter(Boolean).join(', ')}
+                  </div>
+                  <div className="text-sm text-gray-600 mt-2">
+                    Each email will include:
+                    <ul className="list-disc list-inside mt-1 ml-2 space-y-1">
+                      <li>Statement of Account (SOA) document</li>
+                      <li>Payment instructions and bank details</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Email Preview */}
+            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="text-sm">
+                <p className="font-medium mb-2 text-gray-900">Email Content:</p>
+                <div className="text-gray-700 space-y-2 text-xs">
+                  <p>Dear [Client Name],</p>
+                  <p>Referring to our email earlier with regards to the issuance of Viera Residences Building Completion Certificate (BCC), please find attached your Statement of Account (SOA) summary, which outlines the payments received to date and the outstanding balance for your property.</p>
+                  <p>We kindly request you to review the attached SOA and proceed with the settlement of the remaining balance.</p>
+                  <p className="font-medium">Escrow Account Details:</p>
+                  <ul className="list-none ml-2 space-y-0.5">
+                    <li>• Account Name: VIERA RESIDENCES</li>
+                    <li>• Bank: COMMERCIAL BANK INTERNATIONAL PJSC (CBI)</li>
+                    <li>• Account No.: 100110040083</li>
+                    <li>• IBAN: AE740220000100110040083</li>
+                  </ul>
+                  <p className="italic">Your new home will be ready very soon!</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <div className="text-sm text-gray-700">
+                  <p className="font-medium mb-1">Please note:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Only units with uploaded SOA will receive emails</li>
+                    <li>Emails will be queued and sent in the background</li>
+                    <li>Units without owners will be automatically skipped</li>
+                    <li>You can continue working while emails are being sent</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBulkSOAEmailDialogOpen(false);
+              }}
+              disabled={sendingSOAEmails}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (selectedUnitsForHandover.size === 0) {
+                  toast.error('Please select at least one unit');
+                  return;
+                }
+
+                setSendingSOAEmails(true);
+
+                try {
+                  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/bulk-send-soa-email`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${authToken}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      unit_ids: Array.from(selectedUnitsForHandover)
+                    }),
+                  });
+
+                  const result = await response.json();
+
+                  if (response.ok) {
+                    toast.success(result.message || `Queued ${result.queued_count} SOA email(s)`);
+                    
+                    // Show progress popup if we got a batch_id
+                    if (result.batch_id) {
+                      localStorage.setItem('currentEmailBatchId', result.batch_id);
+                      setEmailProgressBatchId(result.batch_id);
+                      setEmailProgressOpen(true);
+                    }
+                    
+                    if (result.skipped && result.skipped.length > 0) {
+                      console.log('Skipped units:', result.skipped);
+                      toast.warning(`${result.skipped.length} unit(s) were skipped (missing SOA or owners)`);
+                    }
+                    fetchAllUnitsForListing(); // Refresh units
+                  } else {
+                    toast.error(result.message || 'Failed to queue SOA emails');
+                  }
+                } catch (error) {
+                  console.error('Error sending SOA emails:', error);
+                  toast.error('Failed to queue SOA emails');
+                }
+
+                setSendingSOAEmails(false);
+                setBulkSOAEmailDialogOpen(false);
+              }}
+              disabled={sendingSOAEmails || selectedUnitsForHandover.size === 0}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {sendingSOAEmails ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Queueing...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Send to {selectedUnitsForHandover.size} Unit(s)
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Add Client Dialog */}
       <Dialog open={addClientDialogOpen} onOpenChange={setAddClientDialogOpen}>
         <DialogContent className="border border-gray-200">
@@ -3219,17 +3372,29 @@ export function AdminDashboard({
                     return;
                   }
 
+                  setUploadingBulkClients(true);
+                  toast.info("Uploading clients... This may take a moment.");
+
                   const response = await bulkUploadUsers({
                     property_id: propertyId,
                     file: uploadFile
                   }, authToken);
 
                   if (response.success) {
-                    toast.success(response.message || "File uploaded successfully");
+                    const created = response.results?.created || 0;
+                    const skipped = response.results?.skipped || 0;
+                    const errors = response.results?.errors?.length || 0;
+                    
+                    toast.success(
+                      `Upload complete! Created: ${created}, Skipped: ${skipped}` + 
+                      (errors > 0 ? `, Errors: ${errors}` : ''),
+                      { duration: 5000 }
+                    );
+                    
                     if (response.results && response.results.errors.length > 0) {
                       console.log("Upload errors:", response.results.errors);
-                      toast.info(`${response.results.errors.length} rows had errors. Check console for details.`);
                     }
+                    
                     setBulkUploadDialogOpen(false);
                     setUploadFile(null);
                     setSelectedProjectForBulk("");
@@ -3241,12 +3406,26 @@ export function AdminDashboard({
                 } catch (error: any) {
                   console.error("Failed to bulk upload clients:", error);
                   toast.error(error.message || "Failed to upload file");
+                } finally {
+                  setUploadingBulkClients(false);
                 }
               }}
-              disabled={!uploadFile || !selectedProjectForBulk}
+              disabled={!uploadFile || !selectedProjectForBulk || uploadingBulkClients}
             >
-              <Upload className="w-4 h-4 mr-2" />
-              Upload
+              {uploadingBulkClients ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
