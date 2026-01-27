@@ -4131,11 +4131,16 @@ export function AdminDashboard({
   async function proceedWithSOAGeneration() {
     setGeneratingSOAs(true);
     try {
-      // First check SOA status
+      // First check SOA status (only for uploaded units if available)
       const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/check-soa-status`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          unit_ids: uploadedUnitIds.length > 0 ? uploadedUnitIds : undefined
+        }),
       });
 
       if (!statusResponse.ok) {
