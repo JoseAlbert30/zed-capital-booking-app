@@ -29,7 +29,14 @@ interface CustomerBookingProps {
   userEmail: string;
   onLogout: () => void;
   bookings: Booking[];
-  onCreateBooking: (booking: { date: Date; time: string; customerEmail: string }, unitId: number) => void;
+  onCreateBooking: (booking: { 
+    date: Date; 
+    time: string; 
+    customerEmail: string;
+    isOwnerAttending?: boolean;
+    poaDocument?: File;
+    attorneyIdDocument?: File;
+  }, unitId: number) => void;
   onDeleteBooking: (id: string) => void;
   currentUser?: User | null;
   authToken: string | null;
@@ -41,18 +48,21 @@ interface CustomerBookingProps {
 
 const TIME_SLOTS = [
   "09:00", "10:00", "11:00", "12:00", "13:00", "14:00",
-  "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"
+  "15:00", "16:00", "17:00"
 ];
 
 export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking, currentUser, authToken, eligibleUnits = [], selectedUnitId, onSelectUnit, isFromBookingLink = false }: CustomerBookingProps) {
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [selectedTime, setSelectedTime] = useState<string>("");
   const [showThankYou, setShowThankYou] = useState(false);
-  const [confirmedBooking, setConfirmedBooking] = useState<{ date: Date; time: string; unit: string; project: string } | null>(null);
+  const [confirmedBooking, setConfirmedBooking] = useState<{ date: Date; time: string; unit: string; project: string; isPending?: boolean } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [isBooking, setIsBooking] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<string[]>(TIME_SLOTS);
+  const [isOwnerAttending, setIsOwnerAttending] = useState<boolean | null>(null);
+  const [poaDocument, setPoaDocument] = useState<File | null>(null);
+  const [attorneyIdDocument, setAttorneyIdDocument] = useState<File | null>(null);
 
   console.log('CustomerBooking render - selectedUnitId:', selectedUnitId);
   console.log('CustomerBooking render - currentUser units:', currentUser?.units?.length);
@@ -75,7 +85,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
     console.log('selectedTime:', selectedTime);
     console.log('selectedUnitId:', selectedUnitId);
     
-    if (selectedDate && selectedTime && selectedUnitId) {
+    if (selectedDate && selectedTime && selectedUnitId && isOwnerAttending !== null) {
       setIsBooking(true);
       setBookingError(null);
       
@@ -86,6 +96,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           date: selectedDate,
           time: selectedTime,
           customerEmail: userEmail,
+          isOwnerAttending: isOwnerAttending,
+          poaDocument: poaDocument || undefined,
+          attorneyIdDocument: attorneyIdDocument || undefined,
         }, selectedUnitId);
         
         setConfirmedBooking({ 
@@ -93,10 +106,14 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           time: selectedTime,
           unit: unit?.unit || '',
           project: unit?.property.project_name || '',
+          isPending: !isOwnerAttending,
         });
         setShowThankYou(true);
         setSelectedDate(undefined);
         setSelectedTime("");
+        setIsOwnerAttending(null);
+        setPoaDocument(null);
+        setAttorneyIdDocument(null);
       } catch (error: any) {
         console.error('Booking error:', error);
         setBookingError(error.message || 'Failed to create booking. Please try again.');
@@ -683,7 +700,110 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             console.log('Showing calendar!');
             return (
             <>
-              {/* Calendar */}
+              {/* Owner Attendance Confirmation */}
+              {isOwnerAttending === null && (
+                <div className="space-y-4 mb-8">
+                  <h3 className="text-xl md:text-2xl font-bold">Will you be attending the handover in person?</h3>
+                  <p className="text-gray-600">Please confirm if you will personally attend the handover appointment or if an attorney will represent you.</p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                      onClick={() => {
+                        setIsOwnerAttending(true);
+                        setPoaDocument(null);
+                        setAttorneyIdDocument(null);
+                      }}
+                      className="p-6 border-2 border-gray-300 rounded-lg hover:border-black hover:bg-gray-50 transition-all text-left"
+                    >
+                      <div className="flex items-start gap-3">
+                        <CheckCircle className="w-6 h-6 text-green-600 mt-1" />
+                        <div>
+                          <h4 className="font-semibold text-lg mb-2">Yes, I/We will attend</h4>
+                          <p className="text-sm text-gray-600">I/We confirm that I/we will personally attend the handover appointment</p>
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => setIsOwnerAttending(false)}
+                      className="p-6 border-2 border-gray-300 rounded-lg hover:border-black hover:bg-gray-50 transition-all text-left"
+                    >
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="w-6 h-6 text-orange-600 mt-1" />
+                        <div>
+                          <h4 className="font-semibold text-lg mb-2">No, attorney will attend</h4>
+                          <p className="text-sm text-gray-600">An authorized attorney will attend on my/our behalf (POA required)</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* POA Document Upload */}
+              {isOwnerAttending === false && (
+                <div className="space-y-4 mb-8 p-6 border-2 border-orange-200 bg-orange-50 rounded-lg">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-orange-600" />
+                    Required Documents for Attorney Representation
+                  </h3>
+                  <p className="text-sm text-gray-700 mb-4">
+                    Since you won't be attending personally, please upload the following documents. Your booking will be pending approval until these documents are reviewed by our team.
+                  </p>
+
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="poa-upload" className="text-base font-semibold">Power of Attorney (POA) Document *</Label>
+                      <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 10MB)</p>
+                      <input
+                        id="poa-upload"
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => setPoaDocument(e.target.files?.[0] || null)}
+                        className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
+                      />
+                      {poaDocument && (
+                        <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4" />
+                          {poaDocument.name}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="attorney-id-upload" className="text-base font-semibold">Attorney's ID Document *</Label>
+                      <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 10MB)</p>
+                      <input
+                        id="attorney-id-upload"
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => setAttorneyIdDocument(e.target.files?.[0] || null)}
+                        className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
+                      />
+                      {attorneyIdDocument && (
+                        <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4" />
+                          {attorneyIdDocument.name}
+                        </p>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setIsOwnerAttending(null);
+                        setPoaDocument(null);
+                        setAttorneyIdDocument(null);
+                      }}
+                      className="text-sm text-gray-600 hover:text-black underline"
+                    >
+                      ← Go back and select a different option
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Calendar - only show after owner attendance confirmation */}
+              {isOwnerAttending !== null && (
               <div className="flex justify-center py-3 md:py-6">
                 <Calendar
                   mode="single"
@@ -722,11 +842,15 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                     // Disable past dates
                     if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true;
                     
-                    // Block today and the next 3 days (total 4 days blocked)
+                    // Block today and the next 2 days (3 days blocked total)
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
                     const earliestBookableDate = new Date(today);
-                    earliestBookableDate.setDate(earliestBookableDate.getDate() + 4);
+                    earliestBookableDate.setDate(earliestBookableDate.getDate() + 3);
+                    
+                    // Set maximum bookable date: 3rd blocked day + 30 days
+                    const maxBookableDate = new Date(today);
+                    maxBookableDate.setDate(maxBookableDate.getDate() + 3 + 30); // Day after 3 blocked days + 30 days
                     
                     // Disable dates before the earliest bookable date
                     const checkDate = new Date(date);
@@ -735,12 +859,19 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                       return true;
                     }
                     
+                    // Disable dates after the max bookable date (30 day cap)
+                    if (checkDate > maxBookableDate) {
+                      return true;
+                    }
+                    
                     return false;
                   }}
                 />
               </div>
+              )}
 
               {/* Time Slots */}
+              {isOwnerAttending !== null && (
               <div className="space-y-3 md:space-y-5">
                 <Label className="flex items-center gap-2 text-lg md:text-xl">
                   <Clock className="w-5 h-5 md:w-6 md:h-6" />
@@ -771,7 +902,10 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   })}
                 </div>
               </div>
+              )}
 
+              {isOwnerAttending !== null && (
+              <>
               {bookingError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                   <div className="flex items-start gap-3">
@@ -786,11 +920,13 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
 
               <Button
                 onClick={handleCreateBooking}
-                disabled={!selectedDate || !selectedTime || !selectedUnitId || isBooking}
+                disabled={!selectedDate || !selectedTime || !selectedUnitId || isBooking || (isOwnerAttending === false && (!poaDocument || !attorneyIdDocument))}
                 className="w-full bg-black hover:bg-gray-800 text-white py-5 md:py-7 text-base md:text-lg mt-4"
               >
-                {isBooking ? 'Creating Booking...' : 'Confirm Handover Appointment'}
+                {isBooking ? 'Creating Booking...' : isOwnerAttending === false ? 'Submit for Approval' : 'Confirm Handover Appointment'}
               </Button>
+              </>
+              )}
             </>
             );
           })()}
@@ -811,33 +947,71 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             <div className="mx-auto w-16 h-16 bg-black rounded-full flex items-center justify-center mb-4">
               <CheckCircle className="w-10 h-10 text-white" />
             </div>
-            <DialogTitle className="text-center text-2xl">Thank You!</DialogTitle>
+            <DialogTitle className="text-center text-2xl">{confirmedBooking?.isPending ? 'Submitted for Approval' : 'Thank You!'}</DialogTitle>
             <DialogDescription className="text-center space-y-4 pt-4">
-              <p className="text-base text-gray-700">
-                Your handover appointment has been successfully scheduled.
-              </p>
-              {confirmedBooking && (
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <p className="text-sm text-gray-600 mb-2">
-                    <strong className="text-black">{confirmedBooking.project}</strong>
-                    <br />
-                    Unit {confirmedBooking.unit}
+              {confirmedBooking?.isPending ? (
+                <>
+                  <p className="text-base text-gray-700">
+                    Your handover appointment request has been submitted successfully.
                   </p>
-                  <p className="font-semibold text-black">
-                    {format(confirmedBooking.date, "EEEE, MMMM d, yyyy")}
+                  <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                    <p className="text-sm font-semibold text-orange-800 mb-2">
+                      <AlertCircle className="w-5 h-5 inline mr-2" />
+                      Pending POA Approval
+                    </p>
+                    <p className="text-sm text-gray-700">
+                      Your Power of Attorney documents are currently under review. You will receive a confirmation email once your documents have been approved.
+                    </p>
+                  </div>
+                  {confirmedBooking && (
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <p className="text-sm text-gray-600 mb-2">
+                        <strong className="text-black">{confirmedBooking.project}</strong>
+                        <br />
+                        Unit {confirmedBooking.unit}
+                      </p>
+                      <p className="font-semibold text-black">
+                        {format(confirmedBooking.date, "EEEE, MMMM d, yyyy")}
+                      </p>
+                      <p className="text-gray-600 mt-1 flex items-center justify-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        {confirmedBooking.time}
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-sm text-gray-600">
+                    This appointment is pending approval. We'll contact you at <strong>{userEmail}</strong> once reviewed.
                   </p>
-                  <p className="text-gray-600 mt-1 flex items-center justify-center gap-1">
-                    <Clock className="w-4 h-4" />
-                    {confirmedBooking.time}
+                </>
+              ) : (
+                <>
+                  <p className="text-base text-gray-700">
+                    Your handover appointment has been successfully scheduled.
                   </p>
-                </div>
+                  {confirmedBooking && (
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <p className="text-sm text-gray-600 mb-2">
+                        <strong className="text-black">{confirmedBooking.project}</strong>
+                        <br />
+                        Unit {confirmedBooking.unit}
+                      </p>
+                      <p className="font-semibold text-black">
+                        {format(confirmedBooking.date, "EEEE, MMMM d, yyyy")}
+                      </p>
+                      <p className="text-gray-600 mt-1 flex items-center justify-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        {confirmedBooking.time}
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-sm text-gray-600">
+                    A confirmation email has been sent to <strong>{userEmail}</strong>
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Please bring a valid ID and any required documentation to your appointment.
+                  </p>
+                </>
               )}
-              <p className="text-sm text-gray-600">
-                A confirmation email has been sent to <strong>{userEmail}</strong>
-              </p>
-              <p className="text-sm text-gray-600">
-                Please bring a valid ID and any required documentation to your appointment.
-              </p>
             </DialogDescription>
           </DialogHeader>
           <Button 

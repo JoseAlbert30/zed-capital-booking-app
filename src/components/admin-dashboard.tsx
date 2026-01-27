@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/t
 import { User, sendSOAEmail, cancelBooking, updateBooking, createUnit, bulkUploadUnits, createUserWithUnit, bulkUploadUsers, getAllUnits, completeHandover, getProjectTemplates, uploadHandoverFile, deleteHandoverFile, getSnaggingDefects, createSnaggingDefect, updateSnaggingDefect, deleteSnaggingDefect, downloadServiceChargeAcknowledgement, downloadAllSOAs } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 import { toast } from "sonner";
 import { Separator } from "./ui/separator";
 import { Badge } from "./ui/badge";
@@ -26,7 +27,12 @@ interface Booking {
   date: Date;
   time: string;
   customerEmail: string;
-  status?: "confirmed" | "completed" | "cancelled";
+  status?: "confirmed" | "completed" | "cancelled" | "pending_poa_approval";
+  is_owner_attending?: boolean;
+  poa_document?: string | null;
+  attorney_id_document?: string | null;
+  poa_document_url?: string | null;
+  attorney_id_document_url?: string | null;
   handover_checklist?: string | null;
   handover_declaration?: string | null;
   handover_photo?: string | null;
@@ -197,6 +203,12 @@ export function AdminDashboard({
   // Bulk send SOA email states
   const [bulkSOAEmailDialogOpen, setBulkSOAEmailDialogOpen] = useState(false);
   const [sendingSOAEmails, setSendingSOAEmails] = useState(false);
+
+  // POA approval states
+  const [poaBooking, setPoaBooking] = useState<Booking | null>(null);
+  const [poaActionLoading, setPoaActionLoading] = useState(false);
+  const [poaRejectionReason, setPoaRejectionReason] = useState("");
+  const [viewPoaDialogOpen, setViewPoaDialogOpen] = useState(false);
   
   // Email progress tracking
   const [emailProgressBatchId, setEmailProgressBatchId] = useState<string | null>(null);
@@ -752,6 +764,76 @@ export function AdminDashboard({
     }
   };
 
+  // POA approval handlers
+  const handleApprovePoaBooking = async (bookingId: string) => {
+    setPoaActionLoading(true);
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${bookingId}/approve-poa`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'approve' }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to approve POA booking');
+      }
+
+      toast.success('POA booking approved successfully!');
+      setViewPoaDialogOpen(false);
+      setPoaBooking(null);
+      
+      // Refresh bookings list
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Error approving POA booking:', error);
+      toast.error(error.message || 'Failed to approve POA booking');
+    } finally {
+      setPoaActionLoading(false);
+    }
+  };
+
+  const handleRejectPoaBooking = async (bookingId: string) => {
+    if (!poaRejectionReason.trim()) {
+      toast.error('Please provide a rejection reason');
+      return;
+    }
+
+    setPoaActionLoading(true);
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${bookingId}/approve-poa`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          action: 'reject',
+          rejection_reason: poaRejectionReason,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reject POA booking');
+      }
+
+      toast.success('POA booking rejected');
+      setViewPoaDialogOpen(false);
+      setPoaBooking(null);
+      setPoaRejectionReason("");
+      
+      // Refresh bookings list
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Error rejecting POA booking:', error);
+      toast.error(error.message || 'Failed to reject POA booking');
+    } finally {
+      setPoaActionLoading(false);
+    }
+  };
+
   // Snagging defect functions
   const addSnaggingDefect = () => {
     const newDefect = {
@@ -984,6 +1066,13 @@ export function AdminDashboard({
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
             <XCircle className="w-3 h-3" />
             Cancelled
+          </span>
+        );
+      case "pending_poa_approval":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+            <AlertCircle className="w-3 h-3" />
+            Pending POA Approval
           </span>
         );
       case "confirmed":
@@ -1285,6 +1374,22 @@ export function AdminDashboard({
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex items-center justify-end gap-2">
+                                  {booking.status === "pending_poa_approval" && (
+                                    <>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setPoaBooking(booking);
+                                          setViewPoaDialogOpen(true);
+                                        }}
+                                        className="bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700"
+                                      >
+                                        <FileText className="w-3 h-3 mr-1" />
+                                        Review POA
+                                      </Button>
+                                    </>
+                                  )}
                                   {(!booking.status || booking.status === "confirmed") && (
                                     <>
                                       <Button
@@ -1313,6 +1418,7 @@ export function AdminDashboard({
                                       </Button>
                                     </>
                                   )}
+                                  {booking.status !== "pending_poa_approval" && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -1322,6 +1428,7 @@ export function AdminDashboard({
                                     <CalendarCheck className="w-3 h-3 mr-1" />
                                     Rebook
                                   </Button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -2065,7 +2172,129 @@ export function AdminDashboard({
         </DialogContent>
       </Dialog>
 
+      {/* POA Review Dialog */}
+      <Dialog open={viewPoaDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setViewPoaDialogOpen(false);
+          setPoaBooking(null);
+          setPoaRejectionReason("");
+        }
+      }}>
+        <DialogContent className="border border-gray-200 max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-orange-600" />
+              Review Power of Attorney Documents
+            </DialogTitle>
+            <DialogDescription>
+              Review the POA and attorney ID documents submitted for this booking
+            </DialogDescription>
+          </DialogHeader>
+          
+          {poaBooking && (
+            <div className="space-y-4 py-4">
+              {/* Booking Details */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <h4 className="font-semibold text-sm">Booking Details</h4>
+                <p className="text-sm text-gray-600">
+                  <strong>Unit:</strong> {(poaBooking as any).unit?.unit || 'N/A'}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Owner:</strong> {poaBooking.user?.full_name || poaBooking.customerEmail}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Date & Time:</strong> {format(poaBooking.date, "EEEE, MMMM d, yyyy")} at {poaBooking.time}
+                </p>
+              </div>
 
+              {/* POA Documents */}
+              <div className="space-y-3">
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Power of Attorney Document
+                  </h4>
+                  {(poaBooking as any).poa_document_url ? (
+                    <a
+                      href={(poaBooking as any).poa_document_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 underline text-sm flex items-center gap-2"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View POA Document
+                    </a>
+                  ) : (
+                    <p className="text-sm text-gray-500">No document uploaded</p>
+                  )}
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Attorney's ID Document
+                  </h4>
+                  {(poaBooking as any).attorney_id_document_url ? (
+                    <a
+                      href={(poaBooking as any).attorney_id_document_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 underline text-sm flex items-center gap-2"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View Attorney ID
+                    </a>
+                  ) : (
+                    <p className="text-sm text-gray-500">No document uploaded</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Rejection Reason Input */}
+              <div className="space-y-2">
+                <Label htmlFor="rejection-reason">Rejection Reason (required if rejecting)</Label>
+                <Textarea
+                  id="rejection-reason"
+                  placeholder="Enter the reason for rejection..."
+                  value={poaRejectionReason}
+                  onChange={(e) => setPoaRejectionReason(e.target.value)}
+                  rows={3}
+                  className="resize-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <Button
+                  onClick={() => handleApprovePoaBooking(poaBooking.id)}
+                  disabled={poaActionLoading}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {poaActionLoading ? 'Processing...' : (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Approve & Send Confirmation
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={() => handleRejectPoaBooking(poaBooking.id)}
+                  disabled={poaActionLoading || !poaRejectionReason.trim()}
+                  variant="outline"
+                  className="flex-1 bg-red-50 hover:bg-red-100 border-red-200 text-red-700"
+                >
+                  {poaActionLoading ? 'Processing...' : (
+                    <>
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Reject & Delete Booking
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Booking Status Dialog */}
       <Dialog open={!!editingBooking} onOpenChange={(open) => !open && setEditingBooking(null)}>

@@ -126,7 +126,14 @@ function BookingPageContent() {
     router.push('/login');
   };
 
-  const handleCreateBooking = async (booking: { date: Date; time: string; customerEmail: string }, unitId: number) => {
+  const handleCreateBooking = async (booking: { 
+    date: Date; 
+    time: string; 
+    customerEmail: string;
+    isOwnerAttending?: boolean;
+    poaDocument?: File;
+    attorneyIdDocument?: File;
+  }, unitId: number) => {
     if (!authToken || !user) return;
 
     console.log('=== handleCreateBooking called ===');
@@ -170,17 +177,42 @@ function BookingPageContent() {
         unit_id: unitId,
         booked_date: formattedDate,
         booked_time: bookingTime,
+        is_owner_attending: booking.isOwnerAttending ?? true,
       };
 
       console.log('Request body:', requestBody);
 
+      // Use FormData if POA documents are provided
+      let body: any;
+      let headers: any = {
+        Authorization: `Bearer ${authToken}`,
+      };
+
+      if (booking.poaDocument || booking.attorneyIdDocument) {
+        const formData = new FormData();
+        formData.append('unit_id', unitId.toString());
+        formData.append('booked_date', formattedDate);
+        formData.append('booked_time', bookingTime);
+        formData.append('is_owner_attending', booking.isOwnerAttending ? 'true' : 'false');
+        
+        if (booking.poaDocument) {
+          formData.append('poa_document', booking.poaDocument);
+        }
+        if (booking.attorneyIdDocument) {
+          formData.append('attorney_id_document', booking.attorneyIdDocument);
+        }
+        
+        body = formData;
+        // Don't set Content-Type header for FormData, let browser set it with boundary
+      } else {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(requestBody);
+      }
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
+        headers: headers,
+        body: body,
       });
 
       console.log('Response status:', response.status);
