@@ -4101,13 +4101,14 @@ export function AdminDashboard({
 
                   if (response.ok) {
                     toast.success(result.message || `Updated payment details for ${result.updated_count} unit(s)`);
-                    setUploadedUnitIds(result.updated_unit_ids || []);
+                    const unitIds = result.updated_unit_ids || [];
+                    setUploadedUnitIds(unitIds);
                     setPaymentDetailsDialogOpen(false);
                     setPaymentDetailsFile(null);
                     setSelectedPropertyForPaymentDetails("");
                     
-                    // Now proceed with SOA generation
-                    await proceedWithSOAGeneration();
+                    // Now proceed with SOA generation, passing unit IDs directly
+                    await proceedWithSOAGeneration(unitIds);
                   } else {
                     toast.error(result.message || 'Failed to upload payment details');
                   }
@@ -4128,8 +4129,12 @@ export function AdminDashboard({
   );
 
   // Function to proceed with SOA generation after payment details upload
-  async function proceedWithSOAGeneration() {
+  async function proceedWithSOAGeneration(unitIds?: number[]) {
     setGeneratingSOAs(true);
+    
+    // Use passed unitIds if available, otherwise fall back to state
+    const idsToUse = unitIds && unitIds.length > 0 ? unitIds : uploadedUnitIds;
+    
     try {
       // First check SOA status (only for uploaded units if available)
       const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/units/check-soa-status`, {
@@ -4139,7 +4144,7 @@ export function AdminDashboard({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          unit_ids: uploadedUnitIds.length > 0 ? uploadedUnitIds : undefined
+          unit_ids: idsToUse.length > 0 ? idsToUse : undefined
         }),
       });
 
@@ -4169,7 +4174,7 @@ export function AdminDashboard({
         },
         body: JSON.stringify({
           with_pho: withPho,
-          unit_ids: uploadedUnitIds.length > 0 ? uploadedUnitIds : undefined
+          unit_ids: idsToUse.length > 0 ? idsToUse : undefined
         }),
       });
 

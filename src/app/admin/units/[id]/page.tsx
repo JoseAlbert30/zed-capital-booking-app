@@ -141,6 +141,9 @@ export default function UnitDetailsPage() {
     amount_to_pay: null as number | null,
     total_amount_paid: null as number | null,
     outstanding_amount: null as number | null,
+    has_pho: false,
+    upon_completion_amount: null as number | null,
+    due_after_completion: null as number | null,
   });
   const [updatingPaymentDetails, setUpdatingPaymentDetails] = useState(false);
   
@@ -2057,25 +2060,89 @@ export default function UnitDetailsPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="outstanding_amount">Outstanding Balance (AED)</Label>
-              <Input
-                id="outstanding_amount"
-                type="number"
-                step="0.01"
-                placeholder="0.00 (negative for overpayment)"
-                value={paymentDetails.outstanding_amount || ''}
-                onChange={(e) => setPaymentDetails({
-                  ...paymentDetails,
-                  outstanding_amount: e.target.value ? parseFloat(e.target.value) : null
-                })}
-                className={paymentDetails.outstanding_amount && paymentDetails.outstanding_amount < 0 ? 'border-green-500' : ''}
-              />
-              <p className="text-xs text-gray-500">
-                Positive = amount due | Negative = overpaid | Zero = fully paid
-              </p>
-            </div>
+            {!paymentDetails.has_pho && (
+              <div className="space-y-2">
+                <Label htmlFor="outstanding_amount">Outstanding Balance (AED)</Label>
+                <Input
+                  id="outstanding_amount"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00 (negative for overpayment)"
+                  value={paymentDetails.outstanding_amount || ''}
+                  onChange={(e) => setPaymentDetails({
+                    ...paymentDetails,
+                    outstanding_amount: e.target.value ? parseFloat(e.target.value) : null
+                  })}
+                  className={paymentDetails.outstanding_amount && paymentDetails.outstanding_amount < 0 ? 'border-green-500' : ''}
+                />
+                <p className="text-xs text-gray-500">
+                  Positive = amount due | Negative = overpaid | Zero = fully paid
+                </p>
+              </div>
+            )}
+
+            {paymentDetails.has_pho && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="upon_completion_amount">Upon Completion Amount To Pay (AED)</Label>
+                  <Input
+                    id="upon_completion_amount"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={paymentDetails.upon_completion_amount || ''}
+                    onChange={(e) => setPaymentDetails({
+                      ...paymentDetails,
+                      upon_completion_amount: e.target.value ? parseFloat(e.target.value) : null
+                    })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="due_after_completion">Due After Completion (AED)</Label>
+                  <Input
+                    id="due_after_completion"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={paymentDetails.due_after_completion || ''}
+                    onChange={(e) => setPaymentDetails({
+                      ...paymentDetails,
+                      due_after_completion: e.target.value ? parseFloat(e.target.value) : null
+                    })}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Amount remaining after completion payment
+                  </p>
+                </div>
+              </>
+            )}
           </div>
+
+          <div className="flex items-center space-x-2 pt-2 border-t">
+            <input
+              type="checkbox"
+              id="has_pho"
+              checked={paymentDetails.has_pho}
+              onChange={(e) => setPaymentDetails({
+                ...paymentDetails,
+                has_pho: e.target.checked,
+                // Clear fields when switching
+                outstanding_amount: e.target.checked ? null : paymentDetails.outstanding_amount,
+                upon_completion_amount: e.target.checked ? paymentDetails.upon_completion_amount : null,
+                due_after_completion: e.target.checked ? paymentDetails.due_after_completion : null,
+              })}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <label htmlFor="has_pho" className="text-sm font-medium">
+              With PHO (Payment Handover Option)
+            </label>
+          </div>
+          <p className="text-xs text-gray-500">
+            {paymentDetails.has_pho 
+              ? 'SOA will show: Total Amount Paid, Upon Completion Amount To Pay, Due After Completion' 
+              : 'SOA will show: Total Amount Paid, Outstanding Balance'}
+          </p>
 
           <DialogFooter>
             <Button
