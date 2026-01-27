@@ -859,6 +859,9 @@ export default function UnitDetailsPage() {
                         amount_to_pay: (unit as any).amount_to_pay || null,
                         total_amount_paid: (unit as any).total_amount_paid || null,
                         outstanding_amount: (unit as any).outstanding_amount || null,
+                        has_pho: (unit as any).has_pho || false,
+                        upon_completion_amount: (unit as any).upon_completion_amount || null,
+                        due_after_completion: (unit as any).due_after_completion || null,
                       });
                     }
                     setPaymentDetailsDialogOpen(true);
