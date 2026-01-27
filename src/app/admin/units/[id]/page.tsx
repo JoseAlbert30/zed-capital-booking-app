@@ -155,8 +155,6 @@ export default function UnitDetailsPage() {
   const [developerPreview, setDeveloperPreview] = useState<any>(null);
   const [validatingHandover, setValidatingHandover] = useState(false);
   
-  // Document viewer
-  const [viewingDocument, setViewingDocument] = useState<Attachment | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
     isOpen: boolean;
     attachmentId: number | null;
@@ -759,6 +757,78 @@ export default function UnitDetailsPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Other Attachments (Receipts, etc.) */}
+            {otherAttachments.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
+                    Other Documents
+                  </CardTitle>
+                  <CardDescription>
+                    Payment receipts and other attachments ({otherAttachments.length})
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {otherAttachments.map((attachment) => {
+                      const truncatedName = attachment.filename.length > 30 
+                        ? attachment.filename.substring(0, 15) + '...' 
+                        : attachment.filename;
+                      
+                      return (
+                        <div
+                          key={attachment.id}
+                          className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium" title={attachment.filename}>{truncatedName}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs">
+                                {attachment.type}
+                              </Badge>
+                              <p className="text-xs text-gray-500">
+                                {format(new Date(attachment.created_at), "MMM d, yyyy")}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="flex-shrink-0"
+                            onClick={() => window.open(attachment.full_url, '_blank')}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="flex-shrink-0"
+                            onClick={() => window.open(attachment.full_url, '_blank')}
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="flex-shrink-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => handleDeleteAttachment(attachment.id, attachment.filename)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Right Column */}
@@ -838,7 +908,7 @@ export default function UnitDetailsPage() {
                               variant="ghost" 
                               size="icon" 
                               className="flex-shrink-0"
-                              onClick={() => setViewingDocument(attachment)}
+                              onClick={() => window.open(attachment.full_url, '_blank')}
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
@@ -1014,7 +1084,7 @@ export default function UnitDetailsPage() {
                                                 variant="ghost" 
                                                 size="icon"
                                                 className="h-6 w-6"
-                                                onClick={() => setViewingDocument(file)}
+                                                onClick={() => window.open(file.full_url, '_blank')}
                                                 title="View document"
                                               >
                                                 <Eye className="w-3 h-3" />
@@ -1147,7 +1217,7 @@ export default function UnitDetailsPage() {
                                                 variant="ghost" 
                                                 size="icon"
                                                 className="h-6 w-6"
-                                                onClick={() => setViewingDocument(file)}
+                                                onClick={() => window.open(file.full_url, '_blank')}
                                                 title="View document"
                                               >
                                                 <Eye className="w-3 h-3" />
@@ -1411,78 +1481,6 @@ export default function UnitDetailsPage() {
                 </Card>
               );
             })()}
-
-            {/* Other Attachments (Receipts, etc.) */}
-            {otherAttachments.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="w-5 h-5" />
-                    Other Documents
-                  </CardTitle>
-                  <CardDescription>
-                    Payment receipts and other attachments ({otherAttachments.length})
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {otherAttachments.map((attachment) => {
-                      const truncatedName = attachment.filename.length > 30 
-                        ? attachment.filename.substring(0, 15) + '...' 
-                        : attachment.filename;
-                      
-                      return (
-                        <div
-                          key={attachment.id}
-                          className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium" title={attachment.filename}>{truncatedName}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge variant="outline" className="text-xs">
-                                {attachment.type}
-                              </Badge>
-                              <p className="text-xs text-gray-500">
-                                {format(new Date(attachment.created_at), "MMM d, yyyy")}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="flex-shrink-0"
-                            onClick={() => setViewingDocument(attachment)}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="flex-shrink-0"
-                            onClick={() => window.open(attachment.full_url, '_blank')}
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="flex-shrink-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => handleDeleteAttachment(attachment.id, attachment.filename)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </div>
         </div>
       </div>
@@ -1530,94 +1528,7 @@ export default function UnitDetailsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Document Viewer Dialog */}
-      <Dialog open={!!viewingDocument} onOpenChange={() => setViewingDocument(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="w-5 h-5" />
-              {viewingDocument?.filename}
-            </DialogTitle>
-            <DialogDescription>
-              <div className="flex items-center gap-3 mt-2">
-                <Badge variant="outline">{viewingDocument?.type}</Badge>
-                {viewingDocument && (
-                  <span className="text-xs text-gray-500">
-                    {format(new Date(viewingDocument.created_at), "MMM d, yyyy 'at' h:mm a")}
-                  </span>
-                )}
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-auto bg-gray-50 rounded-lg p-4">
-            {viewingDocument && (() => {
-              // Force HTTPS for iframe security (browsers block mixed content)
-              const fileUrl = viewingDocument.full_url?.replace(/^http:\/\//i, 'https://');
-              
-              if (!fileUrl) {
-                return (
-                  <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-                    <FileText className="w-16 h-16 text-gray-400 mb-4" />
-                    <p className="text-gray-600 mb-4">File URL not available</p>
-                    <Button onClick={() => setViewingDocument(null)}>
-                      Close
-                    </Button>
-                  </div>
-                );
-              }
-              
-              const isImage = viewingDocument.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-              const isPdf = viewingDocument.filename.match(/\.pdf$/i);
 
-              if (isImage) {
-                return (
-                  <div className="flex items-center justify-center min-h-[400px]">
-                    <img 
-                      src={fileUrl} 
-                      alt={viewingDocument.filename}
-                      className="max-w-full max-h-[70vh] object-contain rounded"
-                    />
-                  </div>
-                );
-              } else if (isPdf) {
-                return (
-                  <iframe
-                    src={fileUrl}
-                    className="w-full h-[70vh] rounded border-0"
-                    title={viewingDocument.filename}
-                  />
-                );
-              } else {
-                return (
-                  <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-                    <FileText className="w-16 h-16 text-gray-400 mb-4" />
-                    <p className="text-gray-600 mb-4">Preview not available for this file type</p>
-                    <Button
-                      onClick={() => window.open(fileUrl, '_blank')}
-                      variant="outline"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Download File
-                    </Button>
-                  </div>
-                );
-              }
-            })()}
-          </div>
-          <DialogFooter className="flex items-center justify-between">
-            <Button
-              variant="outline"
-              onClick={() => viewingDocument && window.open(viewingDocument.full_url, '_blank')}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download
-            </Button>
-            <Button onClick={() => setViewingDocument(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteConfirmation.isOpen} onOpenChange={(open) => 
@@ -1762,7 +1673,7 @@ export default function UnitDetailsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setViewingDocument(attachment)}
+                          onClick={() => window.open(attachment.full_url, '_blank')}
                         >
                           <Eye className="w-4 h-4 mr-1" />
                           View
@@ -2016,6 +1927,7 @@ export default function UnitDetailsPage() {
                             size="sm"
                             className="flex-shrink-0"
                             onClick={() => window.open(doc.full_url, '_blank')}
+                            title="View document"
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
