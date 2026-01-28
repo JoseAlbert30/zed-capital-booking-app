@@ -22,6 +22,7 @@ interface EligibleUnit {
     id: number;
     booked_date: string;
     booked_time: string;
+    status?: string;
   };
 }
 
@@ -365,21 +366,23 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
 
             {/* Unit Owners Card */}
             {(() => {
+              if (!selectedUnitFull) return null;
+              
               const allOwners = [];
               
               // Add primary owner
-              if (selectedUnit.customer_name) {
+              if (selectedUnitFull.customer_name) {
                 allOwners.push({
                   id: 'primary',
-                  name: selectedUnit.customer_name,
+                  name: selectedUnitFull.customer_name,
                   email: '', // Primary owner email not available in this context
                   isPrimary: true
                 });
               }
               
               // Add co-owners
-              if (selectedUnit.co_owners && selectedUnit.co_owners.length > 0) {
-                allOwners.push(...selectedUnit.co_owners.map(co => ({
+              if (selectedUnitFull.co_owners && selectedUnitFull.co_owners.length > 0) {
+                allOwners.push(...selectedUnitFull.co_owners.map(co => ({
                   ...co,
                   isPrimary: false
                 })));
