@@ -768,7 +768,11 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                         id="poa-upload"
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => setPoaDocument(e.target.files?.[0] || null)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          console.log('POA file selected:', file);
+                          setPoaDocument(file);
+                        }}
                         className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
                       />
                       {poaDocument && (
@@ -786,7 +790,11 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                         id="attorney-id-upload"
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => setAttorneyIdDocument(e.target.files?.[0] || null)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          console.log('Attorney ID file selected:', file);
+                          setAttorneyIdDocument(file);
+                        }}
                         className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
                       />
                       {attorneyIdDocument && (

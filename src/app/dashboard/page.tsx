@@ -132,7 +132,14 @@ function DashboardPageContent() {
     router.push('/login');
   };
 
-  const handleCreateBooking = async (booking: { date: Date; time: string; customerEmail: string }, unitId: number) => {
+  const handleCreateBooking = async (booking: { 
+    date: Date; 
+    time: string; 
+    customerEmail: string;
+    isOwnerAttending?: boolean;
+    poaDocument?: File | null;
+    attorneyIdDocument?: File | null;
+  }, unitId: number) => {
     if (!authToken || !currentUser) {
       throw new Error("Authentication required");
     }
@@ -154,19 +161,49 @@ function DashboardPageContent() {
         ? bookingDate.toISOString().split('T')[0]
         : bookingDate;
 
-      const requestBody = {
-        unit_id: unitId,
-        booked_date: formattedDate,
-        booked_time: bookingTime,
+      // Use FormData if POA documents are provided
+      let body: any;
+      let headers: any = {
+        Authorization: `Bearer ${authToken}`,
       };
+
+      if (booking.poaDocument || booking.attorneyIdDocument) {
+        console.log('Using FormData - POA documents provided');
+        const formData = new FormData();
+        formData.append('unit_id', unitId.toString());
+        formData.append('booked_date', formattedDate);
+        formData.append('booked_time', bookingTime);
+        
+        // Explicitly set is_owner_attending
+        const ownerAttendingValue = booking.isOwnerAttending === true ? '1' : '0';
+        console.log('Setting is_owner_attending to:', ownerAttendingValue);
+        formData.append('is_owner_attending', ownerAttendingValue);
+        
+        if (booking.poaDocument) {
+          console.log('Appending POA document:', booking.poaDocument.name);
+          formData.append('poa_document', booking.poaDocument);
+        }
+        if (booking.attorneyIdDocument) {
+          console.log('Appending Attorney ID document:', booking.attorneyIdDocument.name);
+          formData.append('attorney_id_document', booking.attorneyIdDocument);
+        }
+        
+        body = formData;
+        // Don't set Content-Type for FormData, let browser set it with boundary
+      } else {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify({
+          unit_id: unitId,
+          booked_date: formattedDate,
+          booked_time: bookingTime,
+          is_owner_attending: booking.isOwnerAttending ?? true,
+        });
+      }
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
+        headers: headers,
+        body: body,
       });
 
       if (!response.ok) {
