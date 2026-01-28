@@ -189,17 +189,30 @@ function BookingPageContent() {
       };
 
       if (booking.poaDocument || booking.attorneyIdDocument) {
+        console.log('Using FormData - isOwnerAttending:', booking.isOwnerAttending);
         const formData = new FormData();
         formData.append('unit_id', unitId.toString());
         formData.append('booked_date', formattedDate);
         formData.append('booked_time', bookingTime);
-        formData.append('is_owner_attending', booking.isOwnerAttending ? '1' : '0');
+        
+        // Explicitly set is_owner_attending
+        const ownerAttendingValue = booking.isOwnerAttending === true ? '1' : '0';
+        console.log('Setting is_owner_attending to:', ownerAttendingValue);
+        formData.append('is_owner_attending', ownerAttendingValue);
         
         if (booking.poaDocument) {
+          console.log('Appending POA document:', booking.poaDocument.name);
           formData.append('poa_document', booking.poaDocument);
         }
         if (booking.attorneyIdDocument) {
+          console.log('Appending Attorney ID document:', booking.attorneyIdDocument.name);
           formData.append('attorney_id_document', booking.attorneyIdDocument);
+        }
+        
+        // Log FormData contents
+        console.log('FormData entries:');
+        for (let pair of formData.entries()) {
+          console.log(pair[0] + ':', pair[1]);
         }
         
         body = formData;
