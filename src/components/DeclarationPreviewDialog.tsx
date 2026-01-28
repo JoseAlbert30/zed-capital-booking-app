@@ -767,15 +767,6 @@ export function DeclarationPreviewDialog({
                         </div>
                     </div>
 
-                    {/* Part 1: Declaration Signature */}
-                    {renderMultiOwnerSignatureSection(
-                        "Part 1: Declaration Signature",
-                        1,
-                        part1Signatures,
-                        setPart1Signatures,
-                        part1Signed
-                    )}
-
                     {/* Acknowledgement */}
                     <div className="mt-8 pt-6 border-t-2 border-gray-300">
                         <h3 className="font-semibold text-base mb-4">Acknowledgement</h3>
@@ -791,6 +782,15 @@ export function DeclarationPreviewDialog({
                             <strong className="text-amber-800">Legal Notice:</strong> By signing this Declaration, you acknowledge that you have read, understood, and agree to be legally bound by all the terms and conditions set forth in this document.
                         </p>
                     </div>
+
+                    {/* Part 1: Declaration Signature */}
+                    {renderMultiOwnerSignatureSection(
+                        "Part 1: Declaration Signature",
+                        1,
+                        part1Signatures,
+                        setPart1Signatures,
+                        part1Signed
+                    )}
 
                     {/* Snagging Defects */}
                     {defects && defects.length > 0 && (
