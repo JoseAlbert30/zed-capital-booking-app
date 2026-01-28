@@ -108,6 +108,11 @@ interface Unit {
     handover_photo?: string;
     client_signature?: string;
     handover_completed_at?: string;
+    poa_document?: string;
+    poa_document_url?: string;
+    attorney_id_document?: string;
+    attorney_id_document_url?: string;
+    created_at?: string;
   }>;
 }
 
@@ -762,7 +767,7 @@ export default function UnitDetailsPage() {
             </Card>
 
             {/* Other Attachments (Receipts, etc.) */}
-            {(otherAttachments.length > 0 || (unit.booking?.poa_document || unit.booking?.attorney_id_document)) && (
+            {(otherAttachments.length > 0 || (unit.bookings?.[0]?.poa_document || unit.bookings?.[0]?.attorney_id_document)) && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -770,13 +775,13 @@ export default function UnitDetailsPage() {
                     Other Documents
                   </CardTitle>
                   <CardDescription>
-                    Payment receipts and other attachments ({otherAttachments.length + (unit.booking?.poa_document ? 1 : 0) + (unit.booking?.attorney_id_document ? 1 : 0)})
+                    Payment receipts and other attachments ({otherAttachments.length + (unit.bookings?.[0]?.poa_document ? 1 : 0) + (unit.bookings?.[0]?.attorney_id_document ? 1 : 0)})
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
                     {/* POA Documents from Booking */}
-                    {unit.booking?.poa_document && (
+                    {unit.bookings?.[0]?.poa_document && (
                       <div
                         className="flex items-center justify-between p-3 border border-orange-200 rounded-lg hover:bg-orange-50 transition-colors bg-orange-50"
                       >
@@ -788,9 +793,9 @@ export default function UnitDetailsPage() {
                               <Badge variant="outline" className="text-xs bg-orange-100 text-orange-700 border-orange-300">
                                 POA Document
                               </Badge>
-                              {unit.booking.created_at && (
+                              {unit.bookings?.[0]?.created_at && (
                                 <p className="text-xs text-gray-500">
-                                  {format(new Date(unit.booking.created_at), "MMM d, yyyy")}
+                                  {format(new Date(unit.bookings[0].created_at), "MMM d, yyyy")}
                                 </p>
                               )}
                             </div>
@@ -801,7 +806,7 @@ export default function UnitDetailsPage() {
                             variant="ghost" 
                             size="icon" 
                             className="flex-shrink-0"
-                            onClick={() => window.open((unit.booking as any).poa_document_url, '_blank')}
+                            onClick={() => window.open((unit.bookings?.[0] as any)?.poa_document_url, '_blank')}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -809,14 +814,14 @@ export default function UnitDetailsPage() {
                             variant="ghost" 
                             size="icon" 
                             className="flex-shrink-0"
-                            onClick={() => window.open((unit.booking as any).poa_document_url, '_blank')}
+                            onClick={() => window.open((unit.bookings?.[0] as any)?.poa_document_url, '_blank')}
                           >
                             <Download className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>
                     )}
-                    {unit.booking?.attorney_id_document && (
+                    {unit.bookings?.[0]?.attorney_id_document && (
                       <div
                         className="flex items-center justify-between p-3 border border-orange-200 rounded-lg hover:bg-orange-50 transition-colors bg-orange-50"
                       >
@@ -828,9 +833,9 @@ export default function UnitDetailsPage() {
                               <Badge variant="outline" className="text-xs bg-orange-100 text-orange-700 border-orange-300">
                                 Attorney ID
                               </Badge>
-                              {unit.booking.created_at && (
+                              {unit.bookings?.[0]?.created_at && (
                                 <p className="text-xs text-gray-500">
-                                  {format(new Date(unit.booking.created_at), "MMM d, yyyy")}
+                                  {format(new Date(unit.bookings[0].created_at), "MMM d, yyyy")}
                                 </p>
                               )}
                             </div>
@@ -841,7 +846,7 @@ export default function UnitDetailsPage() {
                             variant="ghost" 
                             size="icon" 
                             className="flex-shrink-0"
-                            onClick={() => window.open((unit.booking as any).attorney_id_document_url, '_blank')}
+                            onClick={() => window.open((unit.bookings?.[0] as any)?.attorney_id_document_url, '_blank')}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -849,7 +854,7 @@ export default function UnitDetailsPage() {
                             variant="ghost" 
                             size="icon" 
                             className="flex-shrink-0"
-                            onClick={() => window.open((unit.booking as any).attorney_id_document_url, '_blank')}
+                            onClick={() => window.open((unit.bookings?.[0] as any)?.attorney_id_document_url, '_blank')}
                           >
                             <Download className="w-4 h-4" />
                           </Button>
