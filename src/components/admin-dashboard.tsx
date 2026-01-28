@@ -1374,6 +1374,10 @@ export function AdminDashboard({
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex items-center justify-end gap-2">
+                                  {(() => {
+                                    console.log('Booking ID:', booking.id, 'Status:', booking.status, 'Type:', typeof booking.status);
+                                    return null;
+                                  })()}
                                   {booking.status === "pending_poa_approval" && (
                                     <>
                                       <Button
