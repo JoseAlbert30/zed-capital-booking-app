@@ -20,6 +20,7 @@ export interface Unit {
   handover_status?: "pending" | "ready" | "completed";
   has_mortgage?: boolean;
   property: Property;
+  customer_name?: string;
   pivot?: {
     is_primary: boolean;
   };
@@ -30,6 +31,11 @@ export interface Unit {
     pivot?: {
       is_primary: boolean;
     };
+  }>;
+  co_owners?: Array<{
+    id: number;
+    name: string;
+    email: string;
   }>;
 }
 

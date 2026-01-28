@@ -60,7 +60,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [isBooking, setIsBooking] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<string[]>(TIME_SLOTS);
-  const [isOwnerAttending, setIsOwnerAttending] = useState<boolean | null>(null);
+  const [ownerAttendance, setOwnerAttendance] = useState<Record<number, boolean | null>>({});
   const [poaDocument, setPoaDocument] = useState<File | null>(null);
   const [attorneyIdDocument, setAttorneyIdDocument] = useState<File | null>(null);
 
@@ -70,6 +70,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
 
   // Get selected unit details
   const selectedUnit = eligibleUnits?.find(u => u.id === selectedUnitId);
+  
+  // Get full unit details with co_owners from currentUser.units
+  const selectedUnitFull = currentUser?.units?.find(u => u.id === selectedUnitId);
 
   // Check if user has already booked the selected unit
   const hasBookedSelectedUnit = selectedUnit?.has_booking || false;
@@ -84,19 +87,28 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
     console.log('selectedDate getFullYear():', selectedDate?.getFullYear());
     console.log('selectedTime:', selectedTime);
     console.log('selectedUnitId:', selectedUnitId);
-    console.log('isOwnerAttending:', isOwnerAttending);
+    console.log('ownerAttendance:', ownerAttendance);
     console.log('poaDocument:', poaDocument);
     console.log('attorneyIdDocument:', attorneyIdDocument);
     
-    if (selectedDate && selectedTime && selectedUnitId && isOwnerAttending !== null) {
+    // Get selected unit and owners
+    const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+    const owners = unit ? [{ id: 0, name: unit.customer_name }, ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))] : [];
+    const allOwnersAnswered = owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+    
+    if (selectedDate && selectedTime && selectedUnitId && allOwnersAnswered) {
       setIsBooking(true);
       setBookingError(null);
       
       try {
-        const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+        const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+        const allOwnersAttending = attendingOwners.length === owners.length;
+        const noOwnersAttending = attendingOwners.length === 0;
         
         console.log('Calling onCreateBooking with:', {
-          isOwnerAttending,
+          ownerAttendance,
+          allOwnersAttending,
+          noOwnersAttending,
           hasPoaDoc: !!poaDocument,
           hasAttorneyId: !!attorneyIdDocument,
         });
@@ -105,7 +117,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           date: selectedDate,
           time: selectedTime,
           customerEmail: userEmail,
-          isOwnerAttending: isOwnerAttending,
+          isOwnerAttending: allOwnersAttending,
           poaDocument: poaDocument || undefined,
           attorneyIdDocument: attorneyIdDocument || undefined,
         }, selectedUnitId);
@@ -115,12 +127,12 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           time: selectedTime,
           unit: unit?.unit || '',
           project: unit?.property.project_name || '',
-          isPending: !isOwnerAttending,
+          isPending: !allOwnersAttending,
         });
         setShowThankYou(true);
         setSelectedDate(undefined);
         setSelectedTime("");
-        setIsOwnerAttending(null);
+        setOwnerAttendance({});
         setPoaDocument(null);
         setAttorneyIdDocument(null);
       } catch (error: any) {
@@ -239,6 +251,54 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             <p className="text-sm text-gray-400 mb-1">Email</p>
             <p className="text-lg">{userEmail}</p>
           </div>
+
+          {/* Owner details for selected unit */}
+          {selectedUnitFull && (() => {
+            console.log('selectedUnitFull:', selectedUnitFull);
+            console.log('selectedUnitFull.customer_name:', selectedUnitFull.customer_name);
+            console.log('selectedUnitFull.co_owners:', selectedUnitFull.co_owners);
+            
+            const allOwners = [];
+            
+            // Add primary owner
+            if (selectedUnitFull.customer_name) {
+              allOwners.push({
+                id: 'primary',
+                name: selectedUnitFull.customer_name,
+                email: '', // Primary owner email not available in this context
+                isPrimary: true
+              });
+            }
+            
+            // Add co-owners
+            if (selectedUnitFull.co_owners && selectedUnitFull.co_owners.length > 0) {
+              allOwners.push(...selectedUnitFull.co_owners.map(co => ({
+                ...co,
+                isPrimary: false
+              })));
+            }
+            
+            console.log('allOwners:', allOwners);
+            
+            if (allOwners.length > 1) {
+              return (
+                <div className="bg-white/10 rounded-lg p-6 border border-white/10">
+                  <p className="text-sm text-gray-400 mb-3">Unit Owners</p>
+                  <div className="space-y-3">
+                    {allOwners.map((owner, index) => (
+                      <div key={owner.id || index} className="text-sm border-b border-white/10 pb-2 last:border-0 last:pb-0">
+                        <p className="text-white font-medium">
+                          {owner.name} {owner.isPrimary && <span className="text-xs text-gray-400">(Primary)</span>}
+                        </p>
+                        {owner.email && <p className="text-gray-400">{owner.email}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
           
           {/* Show booking for selected unit if it exists */}
           {selectedUnit?.has_booking && selectedUnit?.booking && (
@@ -302,6 +362,48 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                 </div>
               </div>
             </div>
+
+            {/* Unit Owners Card */}
+            {(() => {
+              const allOwners = [];
+              
+              // Add primary owner
+              if (selectedUnit.customer_name) {
+                allOwners.push({
+                  id: 'primary',
+                  name: selectedUnit.customer_name,
+                  email: '', // Primary owner email not available in this context
+                  isPrimary: true
+                });
+              }
+              
+              // Add co-owners
+              if (selectedUnit.co_owners && selectedUnit.co_owners.length > 0) {
+                allOwners.push(...selectedUnit.co_owners.map(co => ({
+                  ...co,
+                  isPrimary: false
+                })));
+              }
+              
+              if (allOwners.length > 1) {
+                return (
+                  <div className="bg-white/10 rounded-lg p-6 border border-white/10">
+                    <h4 className="font-semibold mb-3 text-sm uppercase tracking-wider text-gray-400">Unit Owners</h4>
+                    <div className="space-y-3">
+                      {allOwners.map((owner, index) => (
+                        <div key={owner.id || index} className="border-b border-white/10 pb-3 last:border-0 last:pb-0">
+                          <p className="text-white font-medium">
+                            {owner.name} {owner.isPrimary && <span className="text-xs text-gray-400">(Primary)</span>}
+                          </p>
+                          {owner.email && <p className="text-sm text-gray-400 mt-1">{owner.email}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* Important Information Card */}
             <div className="bg-white/10 rounded-lg p-6 border border-white/10">
@@ -606,14 +708,26 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             const hasBooking = eligibleUnit?.has_booking && eligibleUnit?.booking;
             
             if (hasBooking && eligibleUnit?.booking) {
+              const isPending = eligibleUnit.booking.status === 'pending_poa_approval';
+              
               return (
                 <div className="flex flex-col items-center justify-center py-12 space-y-6">
-                  <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
-                    <CheckCircle className="w-12 h-12 text-green-600" />
+                  <div className={`w-20 h-20 ${isPending ? 'bg-orange-100' : 'bg-green-100'} rounded-full flex items-center justify-center`}>
+                    {isPending ? (
+                      <AlertCircle className="w-12 h-12 text-orange-600" />
+                    ) : (
+                      <CheckCircle className="w-12 h-12 text-green-600" />
+                    )}
                   </div>
                   <div className="text-center space-y-3">
-                    <h2 className="text-3xl font-bold text-black">Appointment Confirmed!</h2>
-                    <p className="text-lg text-gray-600">Your handover appointment for this unit is scheduled</p>
+                    <h2 className="text-3xl font-bold text-black">
+                      {isPending ? 'Appointment Pending Approval' : 'Appointment Confirmed!'}
+                    </h2>
+                    <p className="text-lg text-gray-600">
+                      {isPending 
+                        ? 'Your handover appointment is pending POA document approval' 
+                        : 'Your handover appointment for this unit is scheduled'}
+                    </p>
                   </div>
                   <div className="bg-gray-50 border-2 border-gray-200 rounded-2xl p-8 w-full max-w-md space-y-4">
                     <div className="flex items-center gap-3 pb-4 border-b border-gray-200">
@@ -644,11 +758,19 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                       </div>
                     </div>
                   </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md">
-                    <p className="text-sm text-blue-800 text-center">
-                      Need to reschedule? Please contact us at <strong>vantage@zedcapital.ae</strong>
-                    </p>
-                  </div>
+                  {isPending ? (
+                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 max-w-md">
+                      <p className="text-sm text-orange-800 text-center">
+                        Your POA documents are being reviewed. You will receive a confirmation email once approved. For questions, contact <strong>vantage@zedcapital.ae</strong>
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md">
+                      <p className="text-sm text-blue-800 text-center">
+                        Need to reschedule? Please contact us at <strong>vantage@zedcapital.ae</strong>
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             }
@@ -709,122 +831,213 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             console.log('Showing calendar!');
             return (
             <>
-              {/* Owner Attendance Confirmation */}
-              {isOwnerAttending === null && (
-                <div className="space-y-4 mb-8">
-                  <h3 className="text-xl md:text-2xl font-bold">Will you be attending the handover in person?</h3>
-                  <p className="text-gray-600">Please confirm if you will personally attend the handover appointment or if an attorney will represent you.</p>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                      onClick={() => {
-                        setIsOwnerAttending(true);
-                        setPoaDocument(null);
-                        setAttorneyIdDocument(null);
-                      }}
-                      className="p-6 border-2 border-gray-300 rounded-lg hover:border-black hover:bg-gray-50 transition-all text-left"
-                    >
-                      <div className="flex items-start gap-3">
-                        <CheckCircle className="w-6 h-6 text-green-600 mt-1" />
-                        <div>
-                          <h4 className="font-semibold text-lg mb-2">Yes, I/We will attend</h4>
-                          <p className="text-sm text-gray-600">I/We confirm that I/we will personally attend the handover appointment</p>
-                        </div>
-                      </div>
-                    </button>
+              {/* Owner Attendance Confirmation - Individual Questions */}
+              {(() => {
+                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                if (!unit) return null;
+                
+                // Build owners array: primary owner + co-owners
+                const owners = [
+                  { id: 0, name: unit.customer_name, label: 'Customer 1' },
+                  ...(unit.co_owners || []).map((co, idx) => ({
+                    id: idx + 1,
+                    name: co.name,
+                    label: `Customer ${idx + 2}`
+                  }))
+                ];
+                
+                const allOwnersAnswered = owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+                const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                const allAttending = attendingOwners.length === owners.length;
+                const noneAttending = attendingOwners.length === 0;
+                
+                return (
+                  <div className="space-y-6 mb-8">
+                    <div>
+                      <h3 className="text-xl md:text-2xl font-bold mb-2">Handover Attendance Confirmation</h3>
+                      <p className="text-gray-600">Please confirm attendance for each owner listed below.</p>
+                    </div>
+                    
+                    {owners.map((owner, index) => {
+                      const hasAnswered = ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null;
+                      const willAttend = ownerAttendance[owner.id] === true;
+                      
+                      return (
+                        <div key={owner.id} className="space-y-3">
+                          <h4 className="font-semibold text-lg">
+                            I, {owner.name}, will be attending the handover in person:
+                          </h4>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button
+                              onClick={() => {
+                                setOwnerAttendance(prev => ({ ...prev, [owner.id]: true }));
+                              }}
+                              className={`p-6 border-2 rounded-lg transition-all text-left ${
+                                willAttend && hasAnswered
+                                  ? 'border-green-500 bg-green-50'
+                                  : 'border-gray-300 hover:border-black hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <CheckCircle className={`w-6 h-6 mt-1 ${
+                                  willAttend && hasAnswered ? 'text-green-600' : 'text-gray-400'
+                                }`} />
+                                <div>
+                                  <h5 className="font-semibold text-base mb-2">Yes, I will attend</h5>
+                                  <p className="text-sm text-gray-600">I confirm that I will personally attend the handover appointment</p>
+                                </div>
+                              </div>
+                            </button>
 
-                    <button
-                      onClick={() => setIsOwnerAttending(false)}
-                      className="p-6 border-2 border-gray-300 rounded-lg hover:border-black hover:bg-gray-50 transition-all text-left"
-                    >
-                      <div className="flex items-start gap-3">
-                        <AlertCircle className="w-6 h-6 text-orange-600 mt-1" />
-                        <div>
-                          <h4 className="font-semibold text-lg mb-2">No, attorney will attend</h4>
-                          <p className="text-sm text-gray-600">An authorized attorney will attend on my/our behalf (POA required)</p>
+                            <button
+                              onClick={() => {
+                                setOwnerAttendance(prev => ({ ...prev, [owner.id]: false }));
+                              }}
+                              className={`p-6 border-2 rounded-lg transition-all text-left ${
+                                !willAttend && hasAnswered
+                                  ? 'border-orange-500 bg-orange-50'
+                                  : 'border-gray-300 hover:border-black hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <AlertCircle className={`w-6 h-6 mt-1 ${
+                                  !willAttend && hasAnswered ? 'text-orange-600' : 'text-gray-400'
+                                }`} />
+                                <div>
+                                  <h5 className="font-semibold text-base mb-2">No, I will not attend</h5>
+                                  <p className="text-sm text-gray-600">
+                                    {owners.length > 1 && noneAttending
+                                      ? 'An authorized POA representative will attend on behalf of all owners'
+                                      : 'An authorized POA representative will attend on my behalf'}
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      );
+                    })}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* POA Document Upload */}
-              {isOwnerAttending === false && (
-                <div className="space-y-4 mb-8 p-6 border-2 border-orange-200 bg-orange-50 rounded-lg">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-orange-600" />
-                    Required Documents for Attorney Representation
-                  </h3>
-                  <p className="text-sm text-gray-700 mb-4">
-                    Since you won't be attending personally, please upload the following documents. Your booking will be pending approval until these documents are reviewed by our team.
-                  </p>
+              {(() => {
+                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                if (!unit) return null;
+                
+                const owners = [
+                  { id: 0, name: unit.customer_name },
+                  ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                ];
+                
+                const allOwnersAnswered = owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+                const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                const noneAttending = attendingOwners.length === 0;
+                const someNotAttending = attendingOwners.length > 0 && attendingOwners.length < owners.length;
+                
+                if (!allOwnersAnswered || attendingOwners.length === owners.length) return null;
+                
+                return (
+                  <div className="space-y-4 mb-8 p-6 border-2 border-orange-200 bg-orange-50 rounded-lg">
+                    <h3 className="text-xl font-bold flex items-center gap-2">
+                      <AlertCircle className="w-6 h-6 text-orange-600" />
+                      Required Documents for POA Representative
+                    </h3>
+                    <p className="text-sm text-gray-700 mb-4">
+                      {noneAttending
+                        ? 'Since none of the owners will be attending personally, please upload an attested POA for the representative who will represent all owners.'
+                        : 'Since some owners will not be attending personally, please upload an attested POA for each non-attending owner.'}
+                      {' '}Your booking will be pending approval until these documents are reviewed by our team.
+                    </p>
 
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="poa-upload" className="text-base font-semibold">Power of Attorney (POA) Document *</Label>
-                      <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 10MB)</p>
-                      <input
-                        id="poa-upload"
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          console.log('POA file selected:', file);
-                          setPoaDocument(file);
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="poa-upload" className="text-base font-semibold">
+                          {noneAttending ? 'Attested Power of Attorney (POA) Document *' : 'Attested POA for Non-Attending Owner(s) *'}
+                        </Label>
+                        <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 5MB)</p>
+                        <input
+                          id="poa-upload"
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            console.log('POA file selected:', file);
+                            setPoaDocument(file);
+                          }}
+                          className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
+                        />
+                        {poaDocument && (
+                          <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4" />
+                            {poaDocument.name}
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <Label htmlFor="attorney-id-upload" className="text-base font-semibold">POA Representative's ID Document *</Label>
+                        <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 5MB)</p>
+                        <input
+                          id="attorney-id-upload"
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            console.log('POA Representative ID file selected:', file);
+                            setAttorneyIdDocument(file);
+                          }}
+                          className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
+                        />
+                        {attorneyIdDocument && (
+                          <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4" />
+                            {attorneyIdDocument.name}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setOwnerAttendance({});
+                          setPoaDocument(null);
+                          setAttorneyIdDocument(null);
                         }}
-                        className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
-                      />
-                      {poaDocument && (
-                        <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
-                          <CheckCircle className="w-4 h-4" />
-                          {poaDocument.name}
-                        </p>
-                      )}
+                        className="text-sm text-gray-600 hover:text-black underline"
+                      >
+                        ← Go back and change attendance selection
+                      </button>
                     </div>
-
-                    <div>
-                      <Label htmlFor="attorney-id-upload" className="text-base font-semibold">Attorney's ID Document *</Label>
-                      <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 10MB)</p>
-                      <input
-                        id="attorney-id-upload"
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          console.log('Attorney ID file selected:', file);
-                          setAttorneyIdDocument(file);
-                        }}
-                        className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
-                      />
-                      {attorneyIdDocument && (
-                        <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
-                          <CheckCircle className="w-4 h-4" />
-                          {attorneyIdDocument.name}
-                        </p>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setIsOwnerAttending(null);
-                        setPoaDocument(null);
-                        setAttorneyIdDocument(null);
-                      }}
-                      className="text-sm text-gray-600 hover:text-black underline"
-                    >
-                      ← Go back and select a different option
-                    </button>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
-              {/* Calendar - only show after owner attendance confirmation */}
-              {isOwnerAttending !== null && (
+              {/* Calendar - only show after all owners have confirmed attendance */}
+              {(() => {
+                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                if (!unit) return false;
+                
+                const owners = [
+                  { id: 0, name: unit.customer_name },
+                  ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                ];
+                
+                return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+              })() && (
               <div className="flex justify-center py-3 md:py-6">
                 <Calendar
                   mode="single"
                   selected={selectedDate}
+                  defaultMonth={(() => {
+                    // Calculate the earliest bookable date (today + 4 days)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const earliestBookableDate = new Date(today);
+                    earliestBookableDate.setDate(earliestBookableDate.getDate() + 4);
+                    return earliestBookableDate;
+                  })()}
                   onSelect={(date) => {
                     if (date) {
                       // Create date at noon Dubai time to avoid timezone boundary issues
@@ -857,8 +1070,18 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   }}
                   disabled={(date) => {
                     // Disable all dates if POA is required but documents not uploaded
-                    if (isOwnerAttending === false && (!poaDocument || !attorneyIdDocument)) {
-                      return true;
+                    const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                    if (unit) {
+                      const owners = [
+                        { id: 0, name: unit.customer_name },
+                        ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                      ];
+                      const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                      const needsPOA = attendingOwners.length < owners.length;
+                      
+                      if (needsPOA && (!poaDocument || !attorneyIdDocument)) {
+                        return true;
+                      }
                     }
                     
                     // Disable past dates
@@ -893,17 +1116,43 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
               )}
 
               {/* Time Slots */}
-              {isOwnerAttending !== null && (
+              {(() => {
+                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                if (!unit) return false;
+                
+                const owners = [
+                  { id: 0, name: unit.customer_name },
+                  ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                ];
+                
+                return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+              })() && (
               <div className="space-y-3 md:space-y-5">
                 <Label className="flex items-center gap-2 text-lg md:text-xl">
                   <Clock className="w-5 h-5 md:w-6 md:h-6" />
                   Available Time Slots
                 </Label>
-                {isOwnerAttending === false && (!poaDocument || !attorneyIdDocument) ? (
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
-                    <p className="text-sm text-orange-800">Please upload both POA and Attorney ID documents to select a time slot</p>
-                  </div>
-                ) : (
+                {(() => {
+                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                  if (!unit) return null;
+                  
+                  const owners = [
+                    { id: 0, name: unit.customer_name },
+                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                  ];
+                  
+                  const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                  const needsPOA = attendingOwners.length < owners.length;
+                  
+                  if (needsPOA && (!poaDocument || !attorneyIdDocument)) {
+                    return (
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
+                        <p className="text-sm text-orange-800">Please upload both attested POA and POA Representative ID documents to select a time slot</p>
+                      </div>
+                    );
+                  }
+                  
+                  return (
                 <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-3">
                   {TIME_SLOTS.map((time) => {
                     const isAvailable = availableSlots.includes(time);
@@ -928,11 +1177,22 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                     );
                   })}
                 </div>
-                )}
+                  );
+                })()}
               </div>
               )}
 
-              {isOwnerAttending !== null && (
+              {(() => {
+                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                if (!unit) return false;
+                
+                const owners = [
+                  { id: 0, name: unit.customer_name },
+                  ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                ];
+                
+                return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+              })() && (
               <>
               {bookingError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -948,10 +1208,40 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
 
               <Button
                 onClick={handleCreateBooking}
-                disabled={!selectedDate || !selectedTime || !selectedUnitId || isBooking || (isOwnerAttending === false && (!poaDocument || !attorneyIdDocument))}
+                disabled={(() => {
+                  if (!selectedDate || !selectedTime || !selectedUnitId || isBooking) return true;
+                  
+                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                  if (!unit) return true;
+                  
+                  const owners = [
+                    { id: 0, name: unit.customer_name },
+                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                  ];
+                  
+                  const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                  const needsPOA = attendingOwners.length < owners.length;
+                  
+                  if (needsPOA && (!poaDocument || !attorneyIdDocument)) return true;
+                  
+                  return false;
+                })()}
                 className="w-full bg-black hover:bg-gray-800 text-white py-5 md:py-7 text-base md:text-lg mt-4"
               >
-                {isBooking ? 'Creating Booking...' : isOwnerAttending === false ? 'Submit for Approval' : 'Confirm Handover Appointment'}
+                {isBooking ? 'Creating Booking...' : (() => {
+                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                  if (!unit) return 'Confirm Handover Appointment';
+                  
+                  const owners = [
+                    { id: 0, name: unit.customer_name },
+                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                  ];
+                  
+                  const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                  const allAttending = attendingOwners.length === owners.length;
+                  
+                  return allAttending ? 'Confirm Handover Appointment' : 'Submit for Approval';
+                })()}
               </Button>
               </>
               )}
@@ -985,10 +1275,10 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
                     <p className="text-sm font-semibold text-orange-800 mb-2">
                       <AlertCircle className="w-5 h-5 inline mr-2" />
-                      Pending POA Approval
+                      Pending Attested POA Approval
                     </p>
                     <p className="text-sm text-gray-700">
-                      Your Power of Attorney documents are currently under review. You will receive a confirmation email once your documents have been approved.
+                      Your attested Power of Attorney documents are currently under review. You will receive a confirmation email once your documents have been approved.
                     </p>
                   </div>
                   {confirmedBooking && (
