@@ -1343,12 +1343,8 @@ export function AdminDashboard({
                                   {booking.status === 'confirmed' && (
                                     <div className="text-xs">
                                       {(() => {
-                                        // Check if declaration is truly complete (no unresolved defects)
-                                        const hasUnresolvedDefects = booking.snagging_defects?.some((d: any) => !d.is_remediated) || false;
-                                        const isDeclarationComplete = booking.handover_declaration && !hasUnresolvedDefects;
-                                        
                                         const completedItems = [
-                                          isDeclarationComplete ? 1 : 0,
+                                          booking.handover_declaration ? 1 : 0,
                                           booking.handover_checklist ? 1 : 0,
                                           booking.handover_photo ? 1 : 0
                                         ].reduce((a, b) => a + b, 0);
@@ -1359,7 +1355,7 @@ export function AdminDashboard({
                                               {completedItems}/3
                                             </span>
                                             <div className="flex gap-0.5">
-                                              <span className={`w-2 h-2 rounded-full ${isDeclarationComplete ? 'bg-green-500' : 'bg-gray-300'}`} title={hasUnresolvedDefects ? "Declaration (Unresolved Defects)" : "Declaration"} />
+                                              <span className={`w-2 h-2 rounded-full ${booking.handover_declaration ? 'bg-green-500' : 'bg-gray-300'}`} title="Declaration" />
                                               <span className={`w-2 h-2 rounded-full ${booking.handover_checklist ? 'bg-green-500' : 'bg-gray-300'}`} title="Checklist" />
                                               <span className={`w-2 h-2 rounded-full ${booking.handover_photo ? 'bg-green-500' : 'bg-gray-300'}`} title="Photo" />
                                             </div>
@@ -1898,27 +1894,21 @@ export function AdminDashboard({
                                   {booking.status === 'confirmed' && (
                                     <div className="mt-2 text-xs">
                                       {(() => {
-                                        // Check if declaration is truly complete (no unresolved defects)
-                                        const hasUnresolvedDefects = booking.snagging_defects?.some((d: any) => !d.is_remediated) || false;
-                                        const isDeclarationComplete = booking.handover_declaration && !hasUnresolvedDefects;
-                                        
                                         const completedItems = [
-                                          isDeclarationComplete ? 1 : 0,
+                                          booking.handover_declaration ? 1 : 0,
                                           booking.handover_checklist ? 1 : 0,
-                                          booking.handover_photo ? 1 : 0,
-                                          booking.client_signature ? 1 : 0
+                                          booking.handover_photo ? 1 : 0
                                         ].reduce((a, b) => a + b, 0);
                                         
                                         return (
                                           <div className="flex items-center gap-1.5">
-                                            <span className={`font-medium ${completedItems === 4 ? 'text-green-600' : 'text-orange-600'}`}>
-                                              {completedItems}/4
+                                            <span className={`font-medium ${completedItems === 3 ? 'text-green-600' : 'text-orange-600'}`}>
+                                              {completedItems}/3
                                             </span>
                                             <div className="flex gap-0.5">
-                                              <span className={`w-1.5 h-1.5 rounded-full ${isDeclarationComplete ? 'bg-green-500' : 'bg-gray-300'}`} title={hasUnresolvedDefects ? "Declaration (Unresolved Defects)" : "Declaration"} />
+                                              <span className={`w-1.5 h-1.5 rounded-full ${booking.handover_declaration ? 'bg-green-500' : 'bg-gray-300'}`} title="Declaration" />
                                               <span className={`w-1.5 h-1.5 rounded-full ${booking.handover_checklist ? 'bg-green-500' : 'bg-gray-300'}`} title="Checklist" />
                                               <span className={`w-1.5 h-1.5 rounded-full ${booking.handover_photo ? 'bg-green-500' : 'bg-gray-300'}`} title="Photo" />
-                                              <span className={`w-1.5 h-1.5 rounded-full ${booking.client_signature ? 'bg-green-500' : 'bg-gray-300'}`} title="Signature" />
                                             </div>
                                           </div>
                                         );
