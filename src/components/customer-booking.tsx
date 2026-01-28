@@ -30,9 +30,9 @@ interface CustomerBookingProps {
   userEmail: string;
   onLogout: () => void;
   bookings: Booking[];
-  onCreateBooking: (booking: { 
-    date: Date; 
-    time: string; 
+  onCreateBooking: (booking: {
+    date: Date;
+    time: string;
     customerEmail: string;
     isOwnerAttending?: boolean;
     poaDocument?: File;
@@ -71,7 +71,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
 
   // Get selected unit details
   const selectedUnit = eligibleUnits?.find(u => u.id === selectedUnitId);
-  
+
   // Get full unit details with co_owners from currentUser.units
   const selectedUnitFull = currentUser?.units?.find(u => u.id === selectedUnitId);
 
@@ -91,21 +91,21 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
     console.log('ownerAttendance:', ownerAttendance);
     console.log('poaDocument:', poaDocument);
     console.log('attorneyIdDocument:', attorneyIdDocument);
-    
+
     // Get selected unit and owners
     const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
     const owners = unit ? [{ id: 0, name: unit.customer_name }, ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))] : [];
     const allOwnersAnswered = owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
-    
+
     if (selectedDate && selectedTime && selectedUnitId && allOwnersAnswered) {
       setIsBooking(true);
       setBookingError(null);
-      
+
       try {
         const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
         const allOwnersAttending = attendingOwners.length === owners.length;
         const noOwnersAttending = attendingOwners.length === 0;
-        
+
         console.log('Calling onCreateBooking with:', {
           ownerAttendance,
           allOwnersAttending,
@@ -113,7 +113,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           hasPoaDoc: !!poaDocument,
           hasAttorneyId: !!attorneyIdDocument,
         });
-        
+
         await onCreateBooking({
           date: selectedDate,
           time: selectedTime,
@@ -122,9 +122,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           poaDocument: poaDocument || undefined,
           attorneyIdDocument: attorneyIdDocument || undefined,
         }, selectedUnitId);
-        
-        setConfirmedBooking({ 
-          date: selectedDate, 
+
+        setConfirmedBooking({
+          date: selectedDate,
           time: selectedTime,
           unit: unit?.unit || '',
           project: unit?.property.project_name || '',
@@ -234,9 +234,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             <h2 className="text-xl font-semibold">Handover Appointment</h2>
           </div>
         </div>
-        <Button 
-          variant="outline" 
-          onClick={onLogout} 
+        <Button
+          variant="outline"
+          onClick={onLogout}
           className="gap-2 bg-white text-black hover:bg-gray-100 border-0"
         >
           <LogOut className="w-4 h-4" />
@@ -258,9 +258,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             console.log('selectedUnitFull:', selectedUnitFull);
             console.log('selectedUnitFull.customer_name:', selectedUnitFull.customer_name);
             console.log('selectedUnitFull.co_owners:', selectedUnitFull.co_owners);
-            
+
             const allOwners = [];
-            
+
             // Add primary owner
             if (selectedUnitFull.customer_name) {
               allOwners.push({
@@ -270,7 +270,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                 isPrimary: true
               });
             }
-            
+
             // Add co-owners
             if (selectedUnitFull.co_owners && selectedUnitFull.co_owners.length > 0) {
               allOwners.push(...selectedUnitFull.co_owners.map(co => ({
@@ -278,9 +278,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                 isPrimary: false
               })));
             }
-            
+
             console.log('allOwners:', allOwners);
-            
+
             if (allOwners.length > 1) {
               return (
                 <div className="bg-white/10 rounded-lg p-6 border border-white/10">
@@ -300,7 +300,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             }
             return null;
           })()}
-          
+
           {/* Show booking for selected unit if it exists */}
           {selectedUnit?.has_booking && selectedUnit?.booking && (
             <div className="bg-white/10 rounded-lg p-6 border border-white/10">
@@ -341,7 +341,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   <p className="text-sm text-gray-300">{selectedUnit.property.project_name}</p>
                 </div>
               </div>
-              
+
               {/* Property Location */}
               <div className="flex items-center gap-2 text-gray-300 mb-4 pb-4 border-b border-white/10">
                 <MapPin className="w-4 h-4 flex-shrink-0" />
@@ -367,9 +367,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             {/* Unit Owners Card */}
             {(() => {
               if (!selectedUnitFull) return null;
-              
+
               const allOwners = [];
-              
+
               // Add primary owner
               if (selectedUnitFull.customer_name) {
                 allOwners.push({
@@ -379,7 +379,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   isPrimary: true
                 });
               }
-              
+
               // Add co-owners
               if (selectedUnitFull.co_owners && selectedUnitFull.co_owners.length > 0) {
                 allOwners.push(...selectedUnitFull.co_owners.map(co => ({
@@ -387,7 +387,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   isPrimary: false
                 })));
               }
-              
+
               if (allOwners.length > 1) {
                 return (
                   <div className="bg-white/10 rounded-lg p-6 border border-white/10">
@@ -415,7 +415,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                 About {selectedUnit.property.project_name}
               </h4>
               <p className="text-sm text-gray-300 leading-relaxed">
-                Your new home is located in one of Dubai's premier residential developments. 
+                Your new home is located in one of Dubai's premier residential developments.
                 We're excited to hand over your property and welcome you to the community.
               </p>
             </div>
@@ -425,165 +425,164 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
 
       {/* Property Details */}
       {!isFromBookingLink && (
-      <div>
-        <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-4">Your Units</h3>
-        <div className="space-y-4">
-          {currentUser?.units && currentUser.units.length > 0 ? (
-            <>
-              {/* Desktop: Unit cards */}
-              <div className="hidden md:block space-y-3">
-                <Label className="text-sm text-gray-400 mb-2 block">Select Unit to Book</Label>
-                {currentUser.units.map((unit) => {
-                  const isEligible = unit.payment_status === 'fully_paid' && unit.handover_ready;
-                  const hasBooking = eligibleUnits?.find(eu => eu.id === unit.id)?.has_booking;
-                  const isSelected = selectedUnitId === unit.id;
-                  
-                  return (
-                    <button
-                      key={unit.id}
-                      onClick={() => {
-                        console.log('Unit card clicked:', unit.id, 'isEligible:', isEligible);
-                        if (isEligible && onSelectUnit) {
-                          onSelectUnit(unit.id);
-                        }
-                      }}
-                      disabled={!isEligible}
-                      className={`
+        <div>
+          <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-4">Your Units</h3>
+          <div className="space-y-4">
+            {currentUser?.units && currentUser.units.length > 0 ? (
+              <>
+                {/* Desktop: Unit cards */}
+                <div className="hidden md:block space-y-3">
+                  <Label className="text-sm text-gray-400 mb-2 block">Select Unit to Book</Label>
+                  {currentUser.units.map((unit) => {
+                    const isEligible = unit.payment_status === 'fully_paid' && unit.handover_ready;
+                    const hasBooking = eligibleUnits?.find(eu => eu.id === unit.id)?.has_booking;
+                    const isSelected = selectedUnitId === unit.id;
+
+                    return (
+                      <button
+                        key={unit.id}
+                        onClick={() => {
+                          console.log('Unit card clicked:', unit.id, 'isEligible:', isEligible);
+                          if (isEligible && onSelectUnit) {
+                            onSelectUnit(unit.id);
+                          }
+                        }}
+                        disabled={!isEligible}
+                        className={`
                         w-full text-left rounded-lg p-4 border transition-all
-                        ${
-                          isSelected
+                        ${isSelected
                             ? 'bg-white/20 border-white/40'
                             : isEligible
-                            ? 'bg-white/10 border-white/10 hover:bg-white/15 hover:border-white/20 cursor-pointer'
-                            : 'bg-white/5 border-white/5 opacity-50 cursor-not-allowed'
-                        }
+                              ? 'bg-white/10 border-white/10 hover:bg-white/15 hover:border-white/20 cursor-pointer'
+                              : 'bg-white/5 border-white/5 opacity-50 cursor-not-allowed'
+                          }
                       `}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Home className="w-4 h-4 text-gray-400" />
-                            <p className="font-semibold text-white">Unit {unit.unit}</p>
-                            {isSelected && (
-                              <CheckCircle className="w-4 h-4 text-green-400" />
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-300 mb-1">{unit.property.project_name}</p>
-                          <div className="flex items-center gap-1 text-xs text-gray-400">
-                            <MapPin className="w-3 h-3" />
-                            <span>{unit.property.location}</span>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {unit.payment_status === 'fully_paid' ? (
-                              <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded">Paid</span>
-                            ) : (
-                              <span className="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded">Payment Pending</span>
-                            )}
-                            {unit.handover_ready ? (
-                              <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded">Ready</span>
-                            ) : (
-                              <span className="text-xs px-2 py-1 bg-gray-500/20 text-gray-300 rounded">Not Ready</span>
-                            )}
-                            {hasBooking && (
-                              <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-300 rounded">Booked</span>
-                            )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Home className="w-4 h-4 text-gray-400" />
+                              <p className="font-semibold text-white">Unit {unit.unit}</p>
+                              {isSelected && (
+                                <CheckCircle className="w-4 h-4 text-green-400" />
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-300 mb-1">{unit.property.project_name}</p>
+                            <div className="flex items-center gap-1 text-xs text-gray-400">
+                              <MapPin className="w-3 h-3" />
+                              <span>{unit.property.location}</span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {unit.payment_status === 'fully_paid' ? (
+                                <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded">Paid</span>
+                              ) : (
+                                <span className="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded">Payment Pending</span>
+                              )}
+                              {unit.handover_ready ? (
+                                <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded">Ready</span>
+                              ) : (
+                                <span className="text-xs px-2 py-1 bg-gray-500/20 text-gray-300 rounded">Not Ready</span>
+                              )}
+                              {hasBooking && (
+                                <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-300 rounded">Booked</span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div className="bg-white/10 rounded-lg p-6 border border-white/10">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h4 className="font-semibold mb-2">No Units Available</h4>
-                  <p className="text-sm text-gray-300">
-                    You don't have any units assigned to your account.
-                  </p>
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Unit Status Messages */}
-          {selectedUnitId && currentUser?.units && (() => {
-            const unit = currentUser.units.find(u => u.id === selectedUnitId);
-            if (!unit) return null;
-            
-            const isEligible = unit.payment_status === 'fully_paid' && unit.handover_ready;
-            const hasBooking = eligibleUnits?.find(eu => eu.id === unit.id)?.has_booking;
-            
-            if (!isEligible) {
-              return (
-                <div className="bg-white/10 rounded-lg p-6 border border-white/10">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <h4 className="font-semibold mb-2 text-yellow-100">Not Available for Booking</h4>
-                      <p className="text-sm text-gray-300">
-                        {unit.payment_status !== 'fully_paid' && 'Payment must be completed. '}
-                        {!unit.handover_ready && 'Handover requirements must be fulfilled.'}
-                      </p>
-                    </div>
+              </>
+            ) : (
+              <div className="bg-white/10 rounded-lg p-6 border border-white/10">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-semibold mb-2">No Units Available</h4>
+                    <p className="text-sm text-gray-300">
+                      You don't have any units assigned to your account.
+                    </p>
                   </div>
                 </div>
-              );
-            }
-            
-            if (hasBooking) {
+              </div>
+            )}
+
+            {/* Unit Status Messages */}
+            {selectedUnitId && currentUser?.units && (() => {
+              const unit = currentUser.units.find(u => u.id === selectedUnitId);
+              if (!unit) return null;
+
+              const isEligible = unit.payment_status === 'fully_paid' && unit.handover_ready;
+              const hasBooking = eligibleUnits?.find(eu => eu.id === unit.id)?.has_booking;
+
+              if (!isEligible) {
+                return (
+                  <div className="bg-white/10 rounded-lg p-6 border border-white/10">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h4 className="font-semibold mb-2 text-yellow-100">Not Available for Booking</h4>
+                        <p className="text-sm text-gray-300">
+                          {unit.payment_status !== 'fully_paid' && 'Payment must be completed. '}
+                          {!unit.handover_ready && 'Handover requirements must be fulfilled.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (hasBooking) {
+                return (
+                  <div className="bg-white/10 rounded-lg p-6 border border-white/10">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h4 className="font-semibold mb-2 text-green-100">Already Booked</h4>
+                        <p className="text-sm text-gray-300">This unit already has a handover appointment scheduled.</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div className="bg-white/10 rounded-lg p-6 border border-white/10">
                   <div className="flex items-start gap-3">
                     <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
                     <div>
-                      <h4 className="font-semibold mb-2 text-green-100">Already Booked</h4>
-                      <p className="text-sm text-gray-300">This unit already has a handover appointment scheduled.</p>
+                      <h4 className="font-semibold mb-2 text-green-100">Ready to Book</h4>
+                      <p className="text-sm text-gray-300">This unit is ready for handover booking.</p>
                     </div>
                   </div>
                 </div>
               );
-            }
-            
-            return (
-              <div className="bg-white/10 rounded-lg p-6 border border-white/10">
-                <div className="flex items-start gap-3">
-                  <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h4 className="font-semibold mb-2 text-green-100">Ready to Book</h4>
-                    <p className="text-sm text-gray-300">This unit is ready for handover booking.</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+            })()}
 
-          <div className="bg-white/10 rounded-lg p-6 border border-white/10">
-            <h4 className="font-semibold mb-3">What to Bring</h4>
-            <ul className="space-y-2 text-sm text-gray-300">
-              <li className="flex items-start gap-2">
-                <span className="text-white mt-1">•</span>
-                <span>Valid government-issued ID</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-white mt-1">•</span>
-                <span>Original purchase agreement</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-white mt-1">•</span>
-                <span>Proof of final payment</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-white mt-1">•</span>
-                <span>Any correspondence from the developer</span>
-              </li>
-            </ul>
+            <div className="bg-white/10 rounded-lg p-6 border border-white/10">
+              <h4 className="font-semibold mb-3">What to Bring</h4>
+              <ul className="space-y-2 text-sm text-gray-300">
+                <li className="flex items-start gap-2">
+                  <span className="text-white mt-1">•</span>
+                  <span>Valid government-issued ID</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-white mt-1">•</span>
+                  <span>Original purchase agreement</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-white mt-1">•</span>
+                  <span>Proof of final payment</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-white mt-1">•</span>
+                  <span>Any correspondence from the developer</span>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Footer Note */}
@@ -610,39 +609,39 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-            <SheetContent side="right" className="w-[85vw] sm:w-[400px] bg-black text-white border-0 p-0 overflow-y-auto">
-              {/* Sheet Header */}
-              <div className="sticky top-0 bg-black z-10 px-6 py-4 border-b border-white/10">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
-                      <CalendarCheck className="w-5 h-5 text-black" />
+              <SheetContent side="right" className="w-[85vw] sm:w-[400px] bg-black text-white border-0 p-0 overflow-y-auto">
+                {/* Sheet Header */}
+                <div className="sticky top-0 bg-black z-10 px-6 py-4 border-b border-white/10">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+                        <CalendarCheck className="w-5 h-5 text-black" />
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-semibold">Account Details</h2>
+                        <p className="text-sm text-gray-400">Property Information</p>
+                      </div>
                     </div>
+                    <SheetClose asChild>
+                      <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
+                        <X className="h-5 w-5" />
+                      </Button>
+                    </SheetClose>
+                  </div>
+                </div>
+
+                {/* Sheet Content */}
+                <div className="px-6 py-6">
+                  <div className="flex flex-col justify-between min-h-full">
                     <div>
-                      <h2 className="text-lg font-semibold">Account Details</h2>
-                      <p className="text-sm text-gray-400">Property Information</p>
+                      <DetailsPanel />
                     </div>
                   </div>
-                  <SheetClose asChild>
-                    <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
-                      <X className="h-5 w-5" />
-                    </Button>
-                  </SheetClose>
                 </div>
-              </div>
-              
-              {/* Sheet Content */}
-              <div className="px-6 py-6">
-                <div className="flex flex-col justify-between min-h-full">
-                  <div>
-                    <DetailsPanel />
-                  </div>
-                </div>
-              </div>
-            </SheetContent>
-          </Sheet>
+              </SheetContent>
+            </Sheet>
           </div>
-          
+
           {/* Unit Selector Cards - Mobile Only */}
           {!isFromBookingLink && currentUser?.units && currentUser.units.length > 0 && (
             <div className="w-full overflow-x-auto">
@@ -651,7 +650,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   const isEligible = unit.payment_status === 'fully_paid' && unit.handover_ready;
                   const hasBooking = eligibleUnits?.find(eu => eu.id === unit.id)?.has_booking;
                   const isSelected = selectedUnitId === unit.id;
-                  
+
                   return (
                     <button
                       key={unit.id}
@@ -663,10 +662,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                       disabled={!isEligible}
                       className={`
                         flex-shrink-0 rounded-lg px-4 py-3 border transition-all text-left min-w-[200px]
-                        ${
-                          isSelected
-                            ? 'bg-black text-white border-black'
-                            : isEligible
+                        ${isSelected
+                          ? 'bg-black text-white border-black'
+                          : isEligible
                             ? 'bg-white text-black border-gray-300 hover:border-black hover:bg-gray-50'
                             : 'bg-gray-100 text-gray-400 border-gray-200 opacity-60 cursor-not-allowed'
                         }
@@ -703,16 +701,16 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
           {/* Show confirmation if user already has a booking for selected unit */}
           {(() => {
             if (!selectedUnitId || !currentUser?.units) return null;
-            
+
             const unit = currentUser.units.find(u => u.id === selectedUnitId);
             if (!unit) return null;
-            
+
             const eligibleUnit = eligibleUnits?.find(eu => eu.id === selectedUnitId);
             const hasBooking = eligibleUnit?.has_booking && eligibleUnit?.booking;
-            
+
             if (hasBooking && eligibleUnit?.booking) {
               const isPending = eligibleUnit.booking.status === 'pending_poa_approval';
-              
+
               return (
                 <div className="flex flex-col items-center justify-center py-12 space-y-6">
                   <div className={`w-20 h-20 ${isPending ? 'bg-orange-100' : 'bg-green-100'} rounded-full flex items-center justify-center`}>
@@ -727,8 +725,8 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                       {isPending ? 'Appointment Pending Approval' : 'Appointment Confirmed!'}
                     </h2>
                     <p className="text-lg text-gray-600">
-                      {isPending 
-                        ? 'Your handover appointment is pending POA document approval' 
+                      {isPending
+                        ? 'Your handover appointment is pending POA document approval'
                         : 'Your handover appointment for this unit is scheduled'}
                     </p>
                   </div>
@@ -777,7 +775,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                 </div>
               );
             }
-            
+
             return null;
           })()}
 
@@ -804,451 +802,445 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
             console.log('=== Calendar display logic ===');
             console.log('selectedUnitId:', selectedUnitId);
             console.log('currentUser?.units:', currentUser?.units?.length);
-            
+
             if (!selectedUnitId || !currentUser?.units) {
               console.log('Returning null: no selectedUnitId or no units');
               return null;
             }
-            
+
             const unit = currentUser.units.find(u => u.id === selectedUnitId);
             console.log('Found unit:', unit);
-            
+
             if (!unit) {
               console.log('Returning null: unit not found');
               return null;
             }
-            
+
             const isEligible = unit.payment_status === 'fully_paid' && unit.handover_ready;
             console.log('isEligible:', isEligible, 'payment_status:', unit.payment_status, 'handover_ready:', unit.handover_ready);
-            
+
             const eligibleUnit = eligibleUnits?.find(eu => eu.id === selectedUnitId);
             const hasBooking = eligibleUnit?.has_booking;
             console.log('hasBooking:', hasBooking);
-            
+
             // Only show calendar if unit is eligible and not booked
             if (!isEligible || hasBooking) {
               console.log('Returning null: not eligible or has booking');
               return null;
             }
-            
+
             console.log('Showing calendar!');
             return (
-            <>
-              {/* Owner Attendance Confirmation - Individual Questions */}
-              {(() => {
-                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
-                if (!unit) return null;
-                
-                // Build owners array: primary owner + co-owners
-                const owners = [
-                  { id: 0, name: unit.customer_name, label: 'Customer 1' },
-                  ...(unit.co_owners || []).map((co, idx) => ({
-                    id: idx + 1,
-                    name: co.name,
-                    label: `Customer ${idx + 2}`
-                  }))
-                ];
-                
-                const allOwnersAnswered = owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
-                const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
-                const allAttending = attendingOwners.length === owners.length;
-                const noneAttending = attendingOwners.length === 0;
-                
-                return (
-                  <div className="space-y-6 mb-8">
-                    <div>
-                      <h3 className="text-xl md:text-2xl font-bold mb-2">Handover Attendance Confirmation</h3>
-                      <p className="text-gray-600">Please confirm attendance for each owner listed below.</p>
-                    </div>
-                    
-                    {owners.map((owner, index) => {
-                      const hasAnswered = ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null;
-                      const willAttend = ownerAttendance[owner.id] === true;
-                      
-                      return (
-                        <div key={owner.id} className="space-y-3">
-                          <h4 className="font-semibold text-lg">
-                            I, {owner.name}, will be attending the handover in person:
-                          </h4>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <button
-                              onClick={() => {
-                                setOwnerAttendance(prev => ({ ...prev, [owner.id]: true }));
-                              }}
-                              className={`p-6 border-2 rounded-lg transition-all text-left ${
-                                willAttend && hasAnswered
-                                  ? 'border-green-500 bg-green-50'
-                                  : 'border-gray-300 hover:border-black hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-start gap-3">
-                                <CheckCircle className={`w-6 h-6 mt-1 ${
-                                  willAttend && hasAnswered ? 'text-green-600' : 'text-gray-400'
-                                }`} />
-                                <div>
-                                  <h5 className="font-semibold text-base mb-2">Yes, I will attend</h5>
-                                  <p className="text-sm text-gray-600">I confirm that I will personally attend the handover appointment</p>
-                                </div>
-                              </div>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setOwnerAttendance(prev => ({ ...prev, [owner.id]: false }));
-                              }}
-                              className={`p-6 border-2 rounded-lg transition-all text-left ${
-                                !willAttend && hasAnswered
-                                  ? 'border-orange-500 bg-orange-50'
-                                  : 'border-gray-300 hover:border-black hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-start gap-3">
-                                <AlertCircle className={`w-6 h-6 mt-1 ${
-                                  !willAttend && hasAnswered ? 'text-orange-600' : 'text-gray-400'
-                                }`} />
-                                <div>
-                                  <h5 className="font-semibold text-base mb-2">No, I will not attend</h5>
-                                  <p className="text-sm text-gray-600">
-                                    {owners.length > 1 && noneAttending
-                                      ? 'An authorized POA representative will attend on behalf of all owners'
-                                      : 'An authorized POA representative will attend on my behalf'}
-                                  </p>
-                                </div>
-                              </div>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-
-              {/* POA Document Upload */}
-              {(() => {
-                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
-                if (!unit) return null;
-                
-                const owners = [
-                  { id: 0, name: unit.customer_name },
-                  ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
-                ];
-                
-                const allOwnersAnswered = owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
-                const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
-                const noneAttending = attendingOwners.length === 0;
-                const someNotAttending = attendingOwners.length > 0 && attendingOwners.length < owners.length;
-                
-                if (!allOwnersAnswered || attendingOwners.length === owners.length) return null;
-                
-                return (
-                  <div className="space-y-4 mb-8 p-6 border-2 border-orange-200 bg-orange-50 rounded-lg">
-                    <h3 className="text-xl font-bold flex items-center gap-2">
-                      <AlertCircle className="w-6 h-6 text-orange-600" />
-                      Required Documents for POA Representative
-                    </h3>
-                    <p className="text-sm text-gray-700 mb-4">
-                      {noneAttending
-                        ? 'Since none of the owners will be attending personally, please upload an attested POA for the representative who will represent all owners.'
-                        : 'Since some owners will not be attending personally, please upload an attested POA for each non-attending owner.'}
-                      {' '}Your booking will be pending approval until these documents are reviewed by our team.
-                    </p>
-
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="poa-upload" className="text-base font-semibold">
-                          {noneAttending ? 'Attested Power of Attorney (POA) Document *' : 'Attested POA for Non-Attending Owner(s) *'}
-                        </Label>
-                        <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 5MB)</p>
-                        <input
-                          id="poa-upload"
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0] || null;
-                            console.log('POA file selected:', file);
-                            setPoaDocument(file);
-                          }}
-                          className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
-                        />
-                        {poaDocument && (
-                          <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
-                            <CheckCircle className="w-4 h-4" />
-                            {poaDocument.name}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label htmlFor="attorney-id-upload" className="text-base font-semibold">POA Representative's ID Document *</Label>
-                        <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 5MB)</p>
-                        <input
-                          id="attorney-id-upload"
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0] || null;
-                            console.log('POA Representative ID file selected:', file);
-                            setAttorneyIdDocument(file);
-                          }}
-                          className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
-                        />
-                        {attorneyIdDocument && (
-                          <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
-                            <CheckCircle className="w-4 h-4" />
-                            {attorneyIdDocument.name}
-                          </p>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          setOwnerAttendance({});
-                          setPoaDocument(null);
-                          setAttorneyIdDocument(null);
-                        }}
-                        className="text-sm text-gray-600 hover:text-black underline"
-                      >
-                        ← Go back and change attendance selection
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Calendar - only show after all owners have confirmed attendance */}
-              {(() => {
-                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
-                if (!unit) return false;
-                
-                const owners = [
-                  { id: 0, name: unit.customer_name },
-                  ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
-                ];
-                
-                return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
-              })() && (
-              <div className="flex justify-center py-3 md:py-6">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  defaultMonth={(() => {
-                    // Calculate the earliest bookable date (today + 4 days)
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const earliestBookableDate = new Date(today);
-                    earliestBookableDate.setDate(earliestBookableDate.getDate() + 4);
-                    return earliestBookableDate;
-                  })()}
-                  onSelect={(date) => {
-                    if (date) {
-                      // Create date at noon Dubai time to avoid timezone boundary issues
-                      // Get the date components as they appear in the calendar (Dubai date)
-                      const year = date.getFullYear();
-                      const month = date.getMonth();
-                      const day = date.getDate();
-                      
-                      // Create a new date with these components at noon
-                      const dubaiDate = new Date(year, month, day, 12, 0, 0);
-                      
-                      console.log('Calendar selected - year:', year, 'month:', month + 1, 'day:', day);
-                      console.log('Dubai date created:', dubaiDate);
-                      console.log('Dubai date components:', dubaiDate.getFullYear(), dubaiDate.getMonth() + 1, dubaiDate.getDate());
-                      
-                      setSelectedDate(dubaiDate);
-                    } else {
-                      setSelectedDate(undefined);
-                    }
-                  }}
-                  className="rounded-lg border border-gray-200 p-3 md:p-6 md:scale-110"
-                  modifiers={{
-                    booked: (date) => bookedDates.includes(date.toDateString()),
-                  }}
-                  modifiersStyles={{
-                    booked: {
-                      backgroundColor: "#f3f4f6",
-                      fontWeight: "bold",
-                    },
-                  }}
-                  disabled={(date) => {
-                    // Disable all dates if POA is required but documents not uploaded
-                    const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
-                    if (unit) {
-                      const owners = [
-                        { id: 0, name: unit.customer_name },
-                        ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
-                      ];
-                      const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
-                      const needsPOA = attendingOwners.length < owners.length;
-                      
-                      if (needsPOA && (!poaDocument || !attorneyIdDocument)) {
-                        return true;
-                      }
-                    }
-                    
-                    // Disable past dates
-                    if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true;
-                    
-                    // Block today and the next 3 days (4 days blocked total)
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const earliestBookableDate = new Date(today);
-                    earliestBookableDate.setDate(earliestBookableDate.getDate() + 4);
-                    
-                    // Set maximum bookable date: 4th blocked day + 30 days
-                    const maxBookableDate = new Date(today);
-                    maxBookableDate.setDate(maxBookableDate.getDate() + 4 + 30); // Day after 4 blocked days + 30 days
-                    
-                    // Disable dates before the earliest bookable date
-                    const checkDate = new Date(date);
-                    checkDate.setHours(0, 0, 0, 0);
-                    if (checkDate < earliestBookableDate) {
-                      return true;
-                    }
-                    
-                    // Disable dates after the max bookable date (30 day cap)
-                    if (checkDate > maxBookableDate) {
-                      return true;
-                    }
-                    
-                    return false;
-                  }}
-                />
-              </div>
-              )}
-
-              {/* Time Slots */}
-              {(() => {
-                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
-                if (!unit) return false;
-                
-                const owners = [
-                  { id: 0, name: unit.customer_name },
-                  ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
-                ];
-                
-                return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
-              })() && (
-              <div className="space-y-3 md:space-y-5">
-                <Label className="flex items-center gap-2 text-lg md:text-xl">
-                  <Clock className="w-5 h-5 md:w-6 md:h-6" />
-                  Available Time Slots
-                </Label>
+              <>
+                {/* Owner Attendance Confirmation - Individual Questions */}
                 {(() => {
                   const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
                   if (!unit) return null;
-                  
-                  const owners = [
-                    { id: 0, name: unit.customer_name },
-                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
-                  ];
-                  
-                  const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
-                  const needsPOA = attendingOwners.length < owners.length;
-                  
-                  if (needsPOA && (!poaDocument || !attorneyIdDocument)) {
-                    return (
-                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
-                        <p className="text-sm text-orange-800">Please upload both attested POA and POA Representative ID documents to select a time slot</p>
-                      </div>
-                    );
-                  }
-                  
-                  return (
-                <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-3">
-                  {TIME_SLOTS.map((time) => {
-                    const isAvailable = availableSlots.includes(time);
-                    const isSelected = selectedTime === time;
-                    return (
-                      <button
-                        key={time}
-                        type="button"
-                        onClick={() => isAvailable && selectedDate && setSelectedTime(time)}
-                        disabled={!selectedDate || !isAvailable}
-                        className={`
-                          px-3 py-2 md:px-4 md:py-3 rounded-lg font-medium transition-all text-sm md:text-base
-                          ${isSelected 
-                            ? 'bg-black text-white' 
-                            : !isAvailable
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed line-through' 
-                            : 'bg-white border border-gray-300 hover:border-black hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed'}
-                        `}
-                      >
-                        {time}
-                      </button>
-                    );
-                  })}
-                </div>
-                  );
-                })()}
-              </div>
-              )}
 
-              {(() => {
-                const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
-                if (!unit) return false;
-                
-                const owners = [
-                  { id: 0, name: unit.customer_name },
-                  ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
-                ];
-                
-                return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
-              })() && (
-              <>
-              {bookingError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-red-800">Booking Error</p>
-                      <p className="text-sm text-red-700 mt-1">{bookingError}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
+                  // Build owners array: primary owner + co-owners
+                  const owners = [
+                    { id: 0, name: unit.customer_name, label: 'Customer 1' },
+                    ...(unit.co_owners || []).map((co, idx) => ({
+                      id: idx + 1,
+                      name: co.name,
+                      label: `Customer ${idx + 2}`
+                    }))
+                  ];
 
-              <Button
-                onClick={handleCreateBooking}
-                disabled={(() => {
-                  if (!selectedDate || !selectedTime || !selectedUnitId || isBooking) return true;
-                  
-                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
-                  if (!unit) return true;
-                  
-                  const owners = [
-                    { id: 0, name: unit.customer_name },
-                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
-                  ];
-                  
-                  const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
-                  const needsPOA = attendingOwners.length < owners.length;
-                  
-                  if (needsPOA && (!poaDocument || !attorneyIdDocument)) return true;
-                  
-                  return false;
-                })()}
-                className="w-full bg-black hover:bg-gray-800 text-white py-5 md:py-7 text-base md:text-lg mt-4"
-              >
-                {isBooking ? 'Creating Booking...' : (() => {
-                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
-                  if (!unit) return 'Confirm Handover Appointment';
-                  
-                  const owners = [
-                    { id: 0, name: unit.customer_name },
-                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
-                  ];
-                  
+                  const allOwnersAnswered = owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
                   const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
                   const allAttending = attendingOwners.length === owners.length;
-                  
-                  return allAttending ? 'Confirm Handover Appointment' : 'Submit for Approval';
+                  const noneAttending = attendingOwners.length === 0;
+
+                  return (
+                    <div className="space-y-6 mb-8">
+                      <div>
+                        <h3 className="text-xl md:text-2xl font-bold mb-2">Handover Attendance Confirmation</h3>
+                        <p className="text-gray-600">Please confirm attendance for each owner listed below.</p>
+                      </div>
+
+                      {owners.map((owner, index) => {
+                        const hasAnswered = ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null;
+                        const willAttend = ownerAttendance[owner.id] === true;
+
+                        return (
+                          <div key={owner.id} className="space-y-3">
+                            <h4 className="font-semibold text-lg">
+                              I, {owner.name}, will be attending the handover in person:
+                            </h4>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <button
+                                onClick={() => {
+                                  setOwnerAttendance(prev => ({ ...prev, [owner.id]: true }));
+                                }}
+                                className={`p-6 border-2 rounded-lg transition-all text-left ${willAttend && hasAnswered
+                                    ? 'border-green-500 bg-green-50'
+                                    : 'border-gray-300 hover:border-black hover:bg-gray-50'
+                                  }`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <CheckCircle className={`w-6 h-6 mt-1 ${willAttend && hasAnswered ? 'text-green-600' : 'text-gray-400'
+                                    }`} />
+                                  <div>
+                                    <h5 className="font-semibold text-base mb-2">Yes, I will attend</h5>
+                                    <p className="text-sm text-gray-600">I confirm that I will personally attend the handover appointment</p>
+                                  </div>
+                                </div>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setOwnerAttendance(prev => ({ ...prev, [owner.id]: false }));
+                                }}
+                                className={`p-6 border-2 rounded-lg transition-all text-left ${!willAttend && hasAnswered
+                                    ? 'border-orange-500 bg-orange-50'
+                                    : 'border-gray-300 hover:border-black hover:bg-gray-50'
+                                  }`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <AlertCircle className={`w-6 h-6 mt-1 ${!willAttend && hasAnswered ? 'text-orange-600' : 'text-gray-400'
+                                    }`} />
+                                  <div>
+                                    <h5 className="font-semibold text-base mb-2">No, I will not attend personally</h5>
+                                    <p className="text-sm text-gray-600">
+                                      {owners.length > 1 && noneAttending
+                                        ? 'My authorized POA will attend on my behalf'
+                                        : 'My authorized POA will attend on my behalf'}
+                                    </p>
+                                  </div>
+                                </div>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
                 })()}
-              </Button>
+
+                {/* POA Document Upload */}
+                {(() => {
+                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                  if (!unit) return null;
+
+                  const owners = [
+                    { id: 0, name: unit.customer_name },
+                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                  ];
+
+                  const allOwnersAnswered = owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+                  const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                  const noneAttending = attendingOwners.length === 0;
+                  const someNotAttending = attendingOwners.length > 0 && attendingOwners.length < owners.length;
+
+                  if (!allOwnersAnswered || attendingOwners.length === owners.length) return null;
+
+                  return (
+                    <div className="space-y-4 mb-8 p-6 border-2 border-orange-200 bg-orange-50 rounded-lg">
+                      <h3 className="text-xl font-bold flex items-center gap-2">
+                        <AlertCircle className="w-6 h-6 text-orange-600" />
+                        Required Documents for POA Representative
+                      </h3>
+                      <p className="text-sm text-gray-700 mb-4">
+                        Please upload a valid POA document along with the POA passport/ID.
+                        {' '}Your booking will be pending for approval until these documents are reviewed by our team.
+                      </p>
+
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="poa-upload" className="text-base font-semibold">
+                            {noneAttending ? 'Valid POA Documentt *' : 'Valid POA Document *'}
+                          </Label>
+                          <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 5MB)</p>
+                          <input
+                            id="poa-upload"
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              console.log('POA file selected:', file);
+                              setPoaDocument(file);
+                            }}
+                            className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
+                          />
+                          {poaDocument && (
+                            <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4" />
+                              {poaDocument.name}
+                            </p>
+                          )}
+                        </div>
+
+                        <div>
+                          <Label htmlFor="attorney-id-upload" className="text-base font-semibold">POA Passport/ID *</Label>
+                          <p className="text-xs text-gray-600 mb-2">Accepted formats: PDF, JPG, PNG (Max 5MB)</p>
+                          <input
+                            id="attorney-id-upload"
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              console.log('POA Representative ID file selected:', file);
+                              setAttorneyIdDocument(file);
+                            }}
+                            className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-black file:text-white hover:file:bg-gray-800 file:cursor-pointer"
+                          />
+                          {attorneyIdDocument && (
+                            <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4" />
+                              {attorneyIdDocument.name}
+                            </p>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setOwnerAttendance({});
+                            setPoaDocument(null);
+                            setAttorneyIdDocument(null);
+                          }}
+                          className="text-sm text-gray-600 hover:text-black underline"
+                        >
+                          ← Go back and change attendance selection
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Calendar - only show after all owners have confirmed attendance */}
+                {(() => {
+                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                  if (!unit) return false;
+
+                  const owners = [
+                    { id: 0, name: unit.customer_name },
+                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                  ];
+
+                  return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+                })() && (
+                    <div className="flex justify-center py-3 md:py-6">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        defaultMonth={(() => {
+                          // Calculate the earliest bookable date (today + 4 days)
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const earliestBookableDate = new Date(today);
+                          earliestBookableDate.setDate(earliestBookableDate.getDate() + 4);
+                          return earliestBookableDate;
+                        })()}
+                        onSelect={(date) => {
+                          if (date) {
+                            // Create date at noon Dubai time to avoid timezone boundary issues
+                            // Get the date components as they appear in the calendar (Dubai date)
+                            const year = date.getFullYear();
+                            const month = date.getMonth();
+                            const day = date.getDate();
+
+                            // Create a new date with these components at noon
+                            const dubaiDate = new Date(year, month, day, 12, 0, 0);
+
+                            console.log('Calendar selected - year:', year, 'month:', month + 1, 'day:', day);
+                            console.log('Dubai date created:', dubaiDate);
+                            console.log('Dubai date components:', dubaiDate.getFullYear(), dubaiDate.getMonth() + 1, dubaiDate.getDate());
+
+                            setSelectedDate(dubaiDate);
+                          } else {
+                            setSelectedDate(undefined);
+                          }
+                        }}
+                        className="rounded-lg border border-gray-200 p-3 md:p-6 md:scale-110"
+                        modifiers={{
+                          booked: (date) => bookedDates.includes(date.toDateString()),
+                        }}
+                        modifiersStyles={{
+                          booked: {
+                            backgroundColor: "#f3f4f6",
+                            fontWeight: "bold",
+                          },
+                        }}
+                        disabled={(date) => {
+                          // Disable all dates if POA is required but documents not uploaded
+                          const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                          if (unit) {
+                            const owners = [
+                              { id: 0, name: unit.customer_name },
+                              ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                            ];
+                            const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                            const needsPOA = attendingOwners.length < owners.length;
+
+                            if (needsPOA && (!poaDocument || !attorneyIdDocument)) {
+                              return true;
+                            }
+                          }
+
+                          // Disable past dates
+                          if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true;
+
+                          // Block today and the next 3 days (4 days blocked total)
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const earliestBookableDate = new Date(today);
+                          earliestBookableDate.setDate(earliestBookableDate.getDate() + 4);
+
+                          // Set maximum bookable date: 4th blocked day + 30 days
+                          const maxBookableDate = new Date(today);
+                          maxBookableDate.setDate(maxBookableDate.getDate() + 4 + 30); // Day after 4 blocked days + 30 days
+
+                          // Disable dates before the earliest bookable date
+                          const checkDate = new Date(date);
+                          checkDate.setHours(0, 0, 0, 0);
+                          if (checkDate < earliestBookableDate) {
+                            return true;
+                          }
+
+                          // Disable dates after the max bookable date (30 day cap)
+                          if (checkDate > maxBookableDate) {
+                            return true;
+                          }
+
+                          return false;
+                        }}
+                      />
+                    </div>
+                  )}
+
+                {/* Time Slots */}
+                {(() => {
+                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                  if (!unit) return false;
+
+                  const owners = [
+                    { id: 0, name: unit.customer_name },
+                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                  ];
+
+                  return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+                })() && (
+                    <div className="space-y-3 md:space-y-5">
+                      <Label className="flex items-center gap-2 text-lg md:text-xl">
+                        <Clock className="w-5 h-5 md:w-6 md:h-6" />
+                        Available Time Slots
+                      </Label>
+                      {(() => {
+                        const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                        if (!unit) return null;
+
+                        const owners = [
+                          { id: 0, name: unit.customer_name },
+                          ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                        ];
+
+                        const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                        const needsPOA = attendingOwners.length < owners.length;
+
+                        if (needsPOA && (!poaDocument || !attorneyIdDocument)) {
+                          return (
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
+                              <p className="text-sm text-orange-800">Please upload both attested POA and POA Representative ID documents to select a time slot</p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-3">
+                            {TIME_SLOTS.map((time) => {
+                              const isAvailable = availableSlots.includes(time);
+                              const isSelected = selectedTime === time;
+                              return (
+                                <button
+                                  key={time}
+                                  type="button"
+                                  onClick={() => isAvailable && selectedDate && setSelectedTime(time)}
+                                  disabled={!selectedDate || !isAvailable}
+                                  className={`
+                          px-3 py-2 md:px-4 md:py-3 rounded-lg font-medium transition-all text-sm md:text-base
+                          ${isSelected
+                                      ? 'bg-black text-white'
+                                      : !isAvailable
+                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed line-through'
+                                        : 'bg-white border border-gray-300 hover:border-black hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed'}
+                        `}
+                                >
+                                  {time}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                {(() => {
+                  const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                  if (!unit) return false;
+
+                  const owners = [
+                    { id: 0, name: unit.customer_name },
+                    ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                  ];
+
+                  return owners.every(owner => ownerAttendance[owner.id] !== undefined && ownerAttendance[owner.id] !== null);
+                })() && (
+                    <>
+                      {bookingError && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                          <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-sm font-medium text-red-800">Booking Error</p>
+                              <p className="text-sm text-red-700 mt-1">{bookingError}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={handleCreateBooking}
+                        disabled={(() => {
+                          if (!selectedDate || !selectedTime || !selectedUnitId || isBooking) return true;
+
+                          const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                          if (!unit) return true;
+
+                          const owners = [
+                            { id: 0, name: unit.customer_name },
+                            ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                          ];
+
+                          const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                          const needsPOA = attendingOwners.length < owners.length;
+
+                          if (needsPOA && (!poaDocument || !attorneyIdDocument)) return true;
+
+                          return false;
+                        })()}
+                        className="w-full bg-black hover:bg-gray-800 text-white py-5 md:py-7 text-base md:text-lg mt-4"
+                      >
+                        {isBooking ? 'Creating Booking...' : (() => {
+                          const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+                          if (!unit) return 'Confirm Handover Appointment';
+
+                          const owners = [
+                            { id: 0, name: unit.customer_name },
+                            ...(unit.co_owners || []).map((co, idx) => ({ id: idx + 1, name: co.name }))
+                          ];
+
+                          const attendingOwners = owners.filter(o => ownerAttendance[o.id] === true);
+                          const allAttending = attendingOwners.length === owners.length;
+
+                          return allAttending ? 'Confirm Handover Appointment' : 'Submit for Approval';
+                        })()}
+                      </Button>
+                    </>
+                  )}
               </>
-              )}
-            </>
             );
           })()}
         </div>
@@ -1335,8 +1327,8 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
               )}
             </DialogDescription>
           </DialogHeader>
-          <Button 
-            onClick={() => setShowThankYou(false)} 
+          <Button
+            onClick={() => setShowThankYou(false)}
             className="w-full bg-black hover:bg-gray-800 text-white"
           >
             Close
