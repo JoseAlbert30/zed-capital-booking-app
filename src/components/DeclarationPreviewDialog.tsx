@@ -597,15 +597,7 @@ export function DeclarationPreviewDialog({
                             </div>
                             <div>
                                 <p className="text-gray-600 font-medium">Building</p>
-                                <p className="text-gray-900">{booking?.unit?.building || "N/A"}</p>
-                            </div>
-                            <div>
-                                <p className="text-gray-600 font-medium">Floor</p>
-                                <p className="text-gray-900">{booking?.unit?.floor || "N/A"}</p>
-                            </div>
-                            <div>
-                                <p className="text-gray-600 font-medium">Area</p>
-                                <p className="text-gray-900">{booking?.unit?.square_footage || "N/A"} Sq.Ft.</p>
+                                <p className="text-gray-900">Viera Residences</p>
                             </div>
                         </div>
                         <div className="border-b"></div>
