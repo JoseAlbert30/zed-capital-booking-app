@@ -10,6 +10,13 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
+  // Admin emails list (should match backend config)
+  const adminEmails = [
+    'admin@bookingsystem.com',
+    'mohamad@zedcapitalbooking.com',
+    'mayada@zedcapitalbooking.com',
+  ];
+
   // Check if already logged in
   useEffect(() => {
     const savedToken = localStorage.getItem('authToken');
@@ -28,8 +35,11 @@ export default function Login() {
       const response = await loginUser(email, password);
       console.log('Login response:', response);
       
+      // Check if user is admin
+      const isAdmin = adminEmails.includes(email.toLowerCase());
+      
       // Check if user has paid status (admin can have any status)
-      if (response.user.payment_status !== "fully_paid" && email !== "admin@bookingsystem.com") {
+      if (response.user.payment_status !== "fully_paid" && !isAdmin) {
         console.log('Payment not complete');
         setLoginError("Your payment is pending. Please complete payment to access the booking system.");
         setIsLoading(false);
@@ -37,16 +47,15 @@ export default function Login() {
       }
 
       // Store auth data
-      const adminStatus = response.user.email === "admin@bookingsystem.com";
       localStorage.setItem('authToken', response.token);
       localStorage.setItem('userEmail', response.user.email);
-      localStorage.setItem('isAdmin', adminStatus.toString());
+      localStorage.setItem('isAdmin', isAdmin.toString());
       localStorage.setItem('userData', JSON.stringify(response.user));
       
       console.log('Login successful, redirecting...');
       
       // Redirect based on role
-      if (adminStatus) {
+      if (isAdmin) {
         router.push('/admin');
       } else {
         router.push('/dashboard');
