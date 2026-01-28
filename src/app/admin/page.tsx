@@ -11,7 +11,12 @@ interface Booking {
   date: Date;
   time: string;
   customerEmail: string;
-  status?: "confirmed" | "completed" | "cancelled";
+  status?: "confirmed" | "completed" | "cancelled" | "pending_poa_approval";
+  poa_document?: string;
+  poa_document_url?: string;
+  attorney_id_document?: string;
+  attorney_id_document_url?: string;
+  is_owner_attending?: boolean;
 }
 
 export default function AdminPage() {
@@ -40,10 +45,16 @@ export default function AdminPage() {
         date: new Date(booking.booked_date),
         time: booking.booked_time,
         customerEmail: booking.user?.email || '',
-        status: 'confirmed' as const,
+        status: booking.status || 'confirmed',
         user: booking.user,
         co_owners: booking.co_owners || [],
         unit_id: booking.unit_id,
+        // POA documents
+        poa_document: booking.poa_document,
+        poa_document_url: booking.poa_document_url,
+        attorney_id_document: booking.attorney_id_document,
+        attorney_id_document_url: booking.attorney_id_document_url,
+        is_owner_attending: booking.is_owner_attending,
         // Handover file paths
         handover_checklist: booking.handover_checklist,
         handover_declaration: booking.handover_declaration,
