@@ -193,7 +193,7 @@ function BookingPageContent() {
         formData.append('unit_id', unitId.toString());
         formData.append('booked_date', formattedDate);
         formData.append('booked_time', bookingTime);
-        formData.append('is_owner_attending', booking.isOwnerAttending ? 'true' : 'false');
+        formData.append('is_owner_attending', booking.isOwnerAttending ? '1' : '0');
         
         if (booking.poaDocument) {
           formData.append('poa_document', booking.poaDocument);
