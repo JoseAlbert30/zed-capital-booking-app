@@ -498,13 +498,6 @@ export default function HandoverCompletionPage() {
       return;
     }
     
-    // Check if at least one owner has signed
-    const validSignatures = Object.values(ownerSignatures).filter(sig => sig.name.trim() && sig.image);
-    if (validSignatures.length === 0) {
-      toast.error("At least one owner must sign the handover acknowledgement");
-      return;
-    }
-    
     setCompletingHandover(true);
     try {
       await completeHandover(Number(bookingId), authToken);
@@ -559,7 +552,7 @@ export default function HandoverCompletionPage() {
           </div>
           <Button
             onClick={handleCompleteHandover}
-            disabled={completingHandover || !handoverChecklistPreview || !handoverDeclarationPreview || !handoverPhotoPreview || Object.values(ownerSignatures).filter(sig => sig.name.trim() && sig.image).length === 0}
+            disabled={completingHandover || !handoverChecklistPreview || !handoverDeclarationPreview || !handoverPhotoPreview}
             className="bg-green-600 hover:bg-green-700 text-white"
             size="lg"
           >
@@ -569,10 +562,13 @@ export default function HandoverCompletionPage() {
         </div>
 
         {/* Validation Warning */}
-        {(!handoverChecklistPreview || !handoverDeclarationPreview || !handoverPhotoPreview || Object.values(ownerSignatures).filter(sig => sig.name.trim() && sig.image).length === 0) && (
+        {(!handoverChecklistPreview || !handoverDeclarationPreview || !handoverPhotoPreview) && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <p className="text-sm text-yellow-800 font-medium">
-              ⚠️ Please complete all required sections before finalizing the handover
+              ⚠️ Please complete all required sections before finalizing the handover:
+              {!handoverDeclarationPreview && <span className="block">• Declaration not generated</span>}
+              {!handoverChecklistPreview && <span className="block">• Checklist not generated</span>}
+              {!handoverPhotoPreview && <span className="block">• Photo not uploaded</span>}
             </p>
           </div>
         )}

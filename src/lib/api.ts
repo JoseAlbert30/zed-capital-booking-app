@@ -791,6 +791,7 @@ export async function getAllBookings(
     if (filters?.project) params.append('project', filters.project);
 
     const url = `${API_BASE_URL}/bookings${params.toString() ? '?' + params.toString() : ''}`;
+    console.log('📡 Calling bookings API:', url);
     
     const response = await fetch(url, {
       method: "GET",
@@ -801,12 +802,15 @@ export async function getAllBookings(
     });
 
     if (!response.ok) {
+      console.error('❌ Bookings API failed:', response.status, response.statusText);
       throw new Error("Unauthorized");
     }
 
     const data = await response.json();
+    console.log('✅ Bookings API success:', data.bookings?.length || 0, 'bookings received');
     return data.bookings || [];
   } catch (error) {
+    console.error('❌ getAllBookings error:', error);
     throw error;
   }
 }

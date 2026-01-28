@@ -65,20 +65,17 @@ export function HandoverChecklistPreviewDialog({
     const [deficienciesIssued, setDeficienciesIssued] = useState("");
     const [handoverCompletedBy, setHandoverCompletedBy] = useState("");
     
-    // Signatures
-    const [purchaserSignature, setPurchaserSignature] = useState<SignatureData>({ name: "", image: null });
-    const [jointPurchaserSignature, setJointPurchaserSignature] = useState<SignatureData>({ name: "", image: null });
+    // Signatures - dynamic for multiple owners
+    const [ownerSignatures, setOwnerSignatures] = useState<Record<string, SignatureData>>({});
     const [poaSignature, setPoaSignature] = useState<SignatureData>({ name: "", image: null });
     const [staffSignature, setStaffSignature] = useState<SignatureData>({ name: "", image: null });
     
-    // Drawing states
-    const [drawingPurchaser, setDrawingPurchaser] = useState(false);
-    const [drawingJoint, setDrawingJoint] = useState(false);
+    // Drawing states - dynamic for multiple owners
+    const [drawingStates, setDrawingStates] = useState<Record<string, boolean>>({});
     const [drawingPOA, setDrawingPOA] = useState(false);
     const [drawingStaff, setDrawingStaff] = useState(false);
     
-    const purchaserCanvasRef = useRef<HTMLCanvasElement | null>(null);
-    const jointCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const ownerCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
     const poaCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const staffCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -109,23 +106,41 @@ export function HandoverChecklistPreviewDialog({
         return owners;
     }, [booking]);
 
-    // Initialize purchaser name and DEWA premise number
+    // Initialize owner signatures and DEWA premise number
     useEffect(() => {
-        if (booking?.user?.full_name) {
-            setPurchaserSignature(prev => ({ ...prev, name: booking.user.full_name }));
-        }
-        if (allOwners.length > 1 && allOwners[1]) {
-            setJointPurchaserSignature(prev => ({ ...prev, name: allOwners[1].name }));
-        }
+        const initSignatures: Record<string, SignatureData> = {};
+        allOwners.forEach((owner, index) => {
+            initSignatures[owner.id] = {
+                name: owner.name, // Autofill owner names
+                image: null
+            };
+        });
+        setOwnerSignatures(initSignatures);
+        
         if (booking?.unit?.dewa_premise_number) {
             setDewaPremiseNumber(booking.unit.dewa_premise_number);
         }
+        // Autofill staff signature name and handover completed by name
+        setStaffSignature(prev => ({ ...prev, name: "Mohamad" }));
+        setHandoverCompletedBy("Mohamad");
     }, [booking, allOwners]);
 
     const handleGenerateChecklist = async () => {
-        // Validate at least purchaser signature
-        if (!purchaserSignature.name.trim() || !purchaserSignature.image) {
-            toast.error("Purchaser signature is required");
+        // Validate signatures - all owners required OR POA for missing owners
+        const totalOwners = allOwners.length;
+        const validOwnerSignatures = Object.values(ownerSignatures).filter(
+            sig => sig.name.trim() && sig.image
+        );
+        const hasPOA = poaSignature.name.trim() && poaSignature.image;
+        
+        // Validate: all owners must sign OR have POA representation
+        if (validOwnerSignatures.length < totalOwners && !hasPOA) {
+            toast.error(`All ${totalOwners} owner(s) must sign OR provide POA authorization for missing signatures`);
+            return;
+        }
+        
+        if (validOwnerSignatures.length === 0 && !hasPOA) {
+            toast.error("At least one signature is required");
             return;
         }
 
@@ -139,6 +154,15 @@ export function HandoverChecklistPreviewDialog({
             setGeneratingPDF(true);
             
             const authToken = localStorage.getItem("authToken") || "";
+            
+            // Build owner signatures array
+            const ownerSignaturesArray = allOwners.map(owner => {
+                const sig = ownerSignatures[owner.id];
+                return {
+                    name: sig?.name || owner.name,
+                    image: sig?.image || null
+                };
+            }).filter(sig => sig.image); // Only include signatures that have been drawn
             
             // Prepare form data
             const formData = {
@@ -173,12 +197,13 @@ export function HandoverChecklistPreviewDialog({
                 remarks: remarks,
                 deficiencies: deficienciesIssued,
                 
-                // Signatures
-                purchaser_signature_name: purchaserSignature.name,
-                purchaser_signature_image: purchaserSignature.image,
-                has_joint_purchaser: allOwners.length > 1 && jointPurchaserSignature.image,
-                joint_signature_name: jointPurchaserSignature.name,
-                joint_signature_image: jointPurchaserSignature.image,
+                // Signatures - new format with multiple owners
+                owner_signatures: ownerSignaturesArray,
+                // Keep legacy format for backward compatibility
+                purchaser_signature_name: ownerSignaturesArray[0]?.name || '',
+                purchaser_signature_image: ownerSignaturesArray[0]?.image || null,
+                joint_signature_name: ownerSignaturesArray[1]?.name || '',
+                joint_signature_image: ownerSignaturesArray[1]?.image || null,
                 has_poa: poaSignature.image !== null,
                 poa_signature_name: poaSignature.name,
                 poa_signature_image: poaSignature.image,
@@ -213,9 +238,16 @@ export function HandoverChecklistPreviewDialog({
     };
 
     const handlePreview = async () => {
-        // Validate at least purchaser signature
-        if (!purchaserSignature.name.trim() || !purchaserSignature.image) {
-            toast.error("Purchaser signature is required to preview");
+        // Validate signatures - all owners required OR POA for missing owners
+        const totalOwners = allOwners.length;
+        const validOwnerSignatures = Object.values(ownerSignatures).filter(
+            sig => sig.name.trim() && sig.image
+        );
+        const hasPOA = poaSignature.name.trim() && poaSignature.image;
+        
+        // Validate: all owners must sign OR have POA representation
+        if (validOwnerSignatures.length < totalOwners && !hasPOA) {
+            toast.error(`All ${totalOwners} owner(s) must sign OR provide POA authorization for missing signatures`);
             return;
         }
 
@@ -753,27 +785,185 @@ export function HandoverChecklistPreviewDialog({
                     <div className="space-y-6">
                         <h3 className="font-semibold text-base uppercase">Signatures</h3>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {renderSignatureCanvas(
-                                "Purchaser",
-                                purchaserCanvasRef,
-                                purchaserSignature,
-                                setPurchaserSignature,
-                                drawingPurchaser,
-                                setDrawingPurchaser,
-                                false
-                            )}
-                            
-                            {allOwners.length > 1 && renderSignatureCanvas(
-                                "Joint Purchaser",
-                                jointCanvasRef,
-                                jointPurchaserSignature,
-                                setJointPurchaserSignature,
-                                drawingJoint,
-                                setDrawingJoint,
-                                false
-                            )}
-                            
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded mb-4">
+                            <p className="text-sm text-gray-800 font-medium mb-2">
+                                📝 Signature Requirements:
+                            </p>
+                            <p className="text-xs text-gray-700 leading-relaxed">
+                                <strong>All {allOwners.length} owner(s) must sign.</strong> If any owner cannot sign in person, a Power of Attorney (POA) signature is required on their behalf.
+                            </p>
+                        </div>
+                        
+                        {/* Dynamic owner signatures */}
+                        <div className="space-y-6">
+                            {allOwners.map((owner, index) => {
+                                const ownerId = owner.id.toString();
+                                const canvasId = `owner-canvas-${ownerId}`;
+                                
+                                return (
+                                    <div key={ownerId} className={`pb-6 ${index < allOwners.length - 1 ? 'border-b border-gray-200' : ''}`}>
+                                        <h4 className="font-medium text-sm mb-4 text-gray-700">
+                                            {index === 0 ? '👤 Primary Purchaser' : `👥 Co-Purchaser ${index}`}: {owner.name}
+                                        </h4>
+                                        
+                                        <div className="space-y-3">
+                                            <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                                            <input
+                                                type="text"
+                                                value={ownerSignatures[ownerId]?.name || ""}
+                                                onChange={(e) => {
+                                                    setOwnerSignatures(prev => ({
+                                                        ...prev,
+                                                        [ownerId]: { ...prev[ownerId], name: e.target.value }
+                                                    }));
+                                                }}
+                                                placeholder="Full Name"
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                            
+                                            <label className="block text-sm font-medium text-gray-700">Draw Signature</label>
+                                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
+                                                <canvas
+                                                    ref={(el) => { ownerCanvasRefs.current[canvasId] = el; }}
+                                                    width={500}
+                                                    height={150}
+                                                    className="w-full border border-gray-300 rounded bg-white touch-none"
+                                                    style={{ 
+                                                        touchAction: 'none',
+                                                        userSelect: 'none',
+                                                        WebkitUserSelect: 'none',
+                                                        WebkitTouchCallout: 'none'
+                                                    }}
+                                                    onMouseDown={(e) => {
+                                                        setDrawingStates(prev => ({ ...prev, [canvasId]: true }));
+                                                        const canvas = ownerCanvasRefs.current[canvasId];
+                                                        if (!canvas) return;
+                                                        const ctx = canvas.getContext('2d');
+                                                        if (!ctx) return;
+                                                        ctx.strokeStyle = '#000';
+                                                        ctx.lineWidth = 2;
+                                                        ctx.lineCap = 'round';
+                                                        ctx.lineJoin = 'round';
+                                                        const rect = canvas.getBoundingClientRect();
+                                                        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+                                                        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+                                                        ctx.beginPath();
+                                                        ctx.moveTo(x, y);
+                                                    }}
+                                                    onMouseMove={(e) => {
+                                                        if (!drawingStates[canvasId]) return;
+                                                        const canvas = ownerCanvasRefs.current[canvasId];
+                                                        if (!canvas) return;
+                                                        const ctx = canvas.getContext('2d');
+                                                        if (!ctx) return;
+                                                        const rect = canvas.getBoundingClientRect();
+                                                        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+                                                        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+                                                        ctx.lineTo(x, y);
+                                                        ctx.stroke();
+                                                    }}
+                                                    onMouseUp={() => setDrawingStates(prev => ({ ...prev, [canvasId]: false }))}
+                                                    onMouseLeave={() => setDrawingStates(prev => ({ ...prev, [canvasId]: false }))}
+                                                    onTouchStart={(e) => {
+                                                        e.preventDefault();
+                                                        setDrawingStates(prev => ({ ...prev, [canvasId]: true }));
+                                                        const canvas = ownerCanvasRefs.current[canvasId];
+                                                        if (!canvas) return;
+                                                        const ctx = canvas.getContext('2d');
+                                                        if (!ctx) return;
+                                                        ctx.strokeStyle = '#000';
+                                                        ctx.lineWidth = 2;
+                                                        ctx.lineCap = 'round';
+                                                        ctx.lineJoin = 'round';
+                                                        const rect = canvas.getBoundingClientRect();
+                                                        const touch = e.touches[0];
+                                                        const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+                                                        const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+                                                        ctx.beginPath();
+                                                        ctx.moveTo(x, y);
+                                                    }}
+                                                    onTouchMove={(e) => {
+                                                        e.preventDefault();
+                                                        if (!drawingStates[canvasId]) return;
+                                                        const canvas = ownerCanvasRefs.current[canvasId];
+                                                        if (!canvas) return;
+                                                        const ctx = canvas.getContext('2d');
+                                                        if (!ctx) return;
+                                                        const rect = canvas.getBoundingClientRect();
+                                                        const touch = e.touches[0];
+                                                        const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+                                                        const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+                                                        ctx.lineTo(x, y);
+                                                        ctx.stroke();
+                                                    }}
+                                                    onTouchEnd={(e) => {
+                                                        e.preventDefault();
+                                                        setDrawingStates(prev => ({ ...prev, [canvasId]: false }));
+                                                    }}
+                                                />
+                                            </div>
+                                            
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="flex-1"
+                                                    onClick={() => {
+                                                        const canvas = ownerCanvasRefs.current[canvasId];
+                                                        if (!canvas) return;
+                                                        const ctx = canvas.getContext('2d');
+                                                        if (!ctx) return;
+                                                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                                        setOwnerSignatures(prev => ({
+                                                            ...prev,
+                                                            [ownerId]: { ...prev[ownerId], image: null }
+                                                        }));
+                                                        toast.success('Signature cleared');
+                                                    }}
+                                                >
+                                                    Clear
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="default"
+                                                    size="sm"
+                                                    className="flex-1"
+                                                    onClick={() => {
+                                                        const canvas = ownerCanvasRefs.current[canvasId];
+                                                        if (!canvas) return;
+                                                        const dataUrl = canvas.toDataURL('image/png');
+                                                        setOwnerSignatures(prev => ({
+                                                            ...prev,
+                                                            [ownerId]: { ...prev[ownerId], image: dataUrl }
+                                                        }));
+                                                        toast.success('Signature saved!');
+                                                    }}
+                                                >
+                                                    Save Signature
+                                                </Button>
+                                            </div>
+                                            
+                                            {ownerSignatures[ownerId]?.image && (
+                                                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                                    <p className="text-xs text-green-700 font-medium mb-2">✓ Signature saved</p>
+                                                    <div className="border rounded bg-white p-2">
+                                                        <img
+                                                            src={ownerSignatures[ownerId].image}
+                                                            alt="Signature preview"
+                                                            className="w-full h-auto max-h-24 object-contain"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        
+                        {/* POA Signature */}
+                        <div className="pt-4 border-t border-gray-200">
                             {renderSignatureCanvas(
                                 "Purchaser POA (if applicable)",
                                 poaCanvasRef,

@@ -1350,20 +1350,18 @@ export function AdminDashboard({
                                         const completedItems = [
                                           isDeclarationComplete ? 1 : 0,
                                           booking.handover_checklist ? 1 : 0,
-                                          booking.handover_photo ? 1 : 0,
-                                          booking.client_signature ? 1 : 0
+                                          booking.handover_photo ? 1 : 0
                                         ].reduce((a, b) => a + b, 0);
                                         
                                         return (
                                           <div className="flex items-center gap-1.5 mt-1">
-                                            <span className={`font-medium ${completedItems === 4 ? 'text-green-600' : 'text-orange-600'}`}>
-                                              {completedItems}/4
+                                            <span className={`font-medium ${completedItems === 3 ? 'text-green-600' : 'text-orange-600'}`}>
+                                              {completedItems}/3
                                             </span>
                                             <div className="flex gap-0.5">
                                               <span className={`w-2 h-2 rounded-full ${isDeclarationComplete ? 'bg-green-500' : 'bg-gray-300'}`} title={hasUnresolvedDefects ? "Declaration (Unresolved Defects)" : "Declaration"} />
                                               <span className={`w-2 h-2 rounded-full ${booking.handover_checklist ? 'bg-green-500' : 'bg-gray-300'}`} title="Checklist" />
                                               <span className={`w-2 h-2 rounded-full ${booking.handover_photo ? 'bg-green-500' : 'bg-gray-300'}`} title="Photo" />
-                                              <span className={`w-2 h-2 rounded-full ${booking.client_signature ? 'bg-green-500' : 'bg-gray-300'}`} title="Signature" />
                                             </div>
                                           </div>
                                         );
@@ -2184,19 +2182,17 @@ export function AdminDashboard({
           setPoaRejectionReason("");
         }
       }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="border-b pb-4">
-            <DialogTitle className="flex items-center gap-3 text-xl">
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <FileText className="w-6 h-6 text-orange-600" />
+        <DialogContent className="max-w-2xl">
+          <DialogHeader className="pb-3">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <div className="p-1.5 bg-orange-100 rounded">
+                <FileText className="w-5 h-5 text-orange-600" />
               </div>
-              <div>
-                <div>Review Power of Attorney Documents</div>
-                <DialogDescription className="text-sm mt-1">
-                  Review and approve or reject the POA documents submitted for this booking
-                </DialogDescription>
-              </div>
+              Review Power of Attorney
             </DialogTitle>
+            <DialogDescription className="text-sm">
+              Review and approve or reject POA documents
+            </DialogDescription>
           </DialogHeader>
           
           {poaBooking && (() => {
@@ -2204,152 +2200,116 @@ export function AdminDashboard({
             const bookedUnit = user?.units?.find(u => u.id === (poaBooking as any).unit_id);
             
             return (
-            <div className="space-y-6 py-6">
-              {/* Booking Details Card */}
-              <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-200 rounded-xl p-6">
-                <h4 className="font-semibold text-base mb-4 flex items-center gap-2">
-                  <CalendarCheck className="w-5 h-5 text-gray-700" />
-                  Booking Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
-                    <p className="text-xs text-gray-500 uppercase font-medium">Unit</p>
-                    <p className="text-base font-semibold text-gray-900">
-                      {bookedUnit?.unit || 'N/A'}
-                    </p>
+            <div className="space-y-4">
+              {/* Booking Info */}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">Unit</p>
+                    <p className="font-semibold text-gray-900">{bookedUnit?.unit || 'N/A'}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-gray-500 uppercase font-medium">Owner</p>
-                    <p className="text-base font-semibold text-gray-900">
-                      {user?.full_name || poaBooking.customerEmail}
-                    </p>
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">Owner</p>
+                    <p className="font-semibold text-gray-900">{user?.full_name || poaBooking.customerEmail}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-gray-500 uppercase font-medium">Appointment</p>
-                    <p className="text-base font-semibold text-gray-900">
-                      {format(poaBooking.date, "MMM d, yyyy")}
-                    </p>
-                    <p className="text-sm text-gray-600">{poaBooking.time}</p>
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">Date & Time</p>
+                    <p className="font-semibold text-gray-900">{format(poaBooking.date, "MMM d, yyyy")}</p>
+                    <p className="text-xs text-gray-600">{poaBooking.time}</p>
                   </div>
                 </div>
               </div>
 
-              {/* POA Documents Section */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* POA Document */}
-                <div className="border-2 border-orange-200 rounded-xl p-5 bg-orange-50 hover:border-orange-300 transition-colors">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-orange-100 rounded-lg">
-                        <FileText className="w-5 h-5 text-orange-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-sm text-gray-900">Power of Attorney</h4>
-                        <p className="text-xs text-gray-600">Legal authorization document</p>
-                      </div>
+              {/* Documents */}
+              <div className="space-y-2">
+                <div className="border border-orange-200 rounded-lg p-3 bg-orange-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-orange-600" />
+                      <span className="text-sm font-medium">Power of Attorney</span>
                     </div>
+                    {(poaBooking as any).poa_document_url && (
+                      <a
+                        href={(poaBooking as any).poa_document_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                      >
+                        <Eye className="w-3 h-3" />
+                        View
+                      </a>
+                    )}
                   </div>
-                  {(poaBooking as any).poa_document_url ? (
-                    <a
-                      href={(poaBooking as any).poa_document_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-white border-2 border-orange-300 rounded-lg text-orange-700 font-medium hover:bg-orange-100 transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                      View Document
-                    </a>
-                  ) : (
-                    <div className="text-center py-3 text-sm text-gray-500 bg-white rounded-lg border-2 border-dashed border-gray-300">
-                      No document uploaded
-                    </div>
-                  )}
                 </div>
-
-                {/* Attorney ID */}
-                <div className="border-2 border-orange-200 rounded-xl p-5 bg-orange-50 hover:border-orange-300 transition-colors">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-orange-100 rounded-lg">
-                        <FileText className="w-5 h-5 text-orange-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-sm text-gray-900">Attorney's ID</h4>
-                        <p className="text-xs text-gray-600">Identification document</p>
-                      </div>
+                <div className="border border-orange-200 rounded-lg p-3 bg-orange-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-orange-600" />
+                      <span className="text-sm font-medium">Attorney's ID</span>
                     </div>
+                    {(poaBooking as any).attorney_id_document_url && (
+                      <a
+                        href={(poaBooking as any).attorney_id_document_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                      >
+                        <Eye className="w-3 h-3" />
+                        View
+                      </a>
+                    )}
                   </div>
-                  {(poaBooking as any).attorney_id_document_url ? (
-                    <a
-                      href={(poaBooking as any).attorney_id_document_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-white border-2 border-orange-300 rounded-lg text-orange-700 font-medium hover:bg-orange-100 transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                      View Document
-                    </a>
-                  ) : (
-                    <div className="text-center py-3 text-sm text-gray-500 bg-white rounded-lg border-2 border-dashed border-gray-300">
-                      No document uploaded
-                    </div>
-                  )}
                 </div>
               </div>
 
-              {/* Rejection Reason Section */}
-              <div className="space-y-3 bg-red-50 border-2 border-red-200 rounded-xl p-5">
-                <Label htmlFor="rejection-reason" className="text-sm font-semibold flex items-center gap-2">
-                  <XCircle className="w-4 h-4 text-red-600" />
+              {/* Rejection Reason */}
+              <div className="space-y-2">
+                <Label htmlFor="rejection-reason" className="text-sm font-medium">
                   Rejection Reason (required if rejecting)
                 </Label>
                 <Textarea
                   id="rejection-reason"
-                  placeholder="Enter the reason for rejection... (e.g., Document is not clear, Missing signature, Invalid POA)"
+                  placeholder="Enter rejection reason..."
                   value={poaRejectionReason}
                   onChange={(e) => setPoaRejectionReason(e.target.value)}
-                  rows={3}
-                  className="resize-none bg-white border-red-300 focus:border-red-500 focus:ring-red-500"
+                  rows={2}
+                  className="resize-none text-sm"
                 />
-                <p className="text-xs text-gray-600">
-                  This reason will be included in the rejection email sent to the client.
-                </p>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
                 <Button
                   onClick={() => handleApprovePoaBooking(poaBooking.id)}
                   disabled={poaActionLoading}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white h-12 text-base font-semibold shadow-md"
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                 >
                   {poaActionLoading ? (
                     <>
-                      <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                       Processing...
                     </>
                   ) : (
                     <>
-                      <CheckCircle className="w-5 h-5 mr-2" />
-                      Approve & Confirm Booking
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Approve
                     </>
                   )}
                 </Button>
                 <Button
                   onClick={() => handleRejectPoaBooking(poaBooking.id)}
                   disabled={poaActionLoading || !poaRejectionReason.trim()}
-                  variant="outline"
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white border-red-600 h-12 text-base font-semibold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
                 >
                   {poaActionLoading ? (
                     <>
-                      <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                       Processing...
                     </>
                   ) : (
                     <>
-                      <XCircle className="w-5 h-5 mr-2" />
-                      Reject & Delete Booking
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Reject
                     </>
                   )}
                 </Button>

@@ -39,7 +39,9 @@ export default function AdminPage() {
 
   const fetchBookings = useCallback(async (token: string, filters: { search?: string; status?: string; project?: string }) => {
     try {
+      console.log('📅 Fetching bookings from API with filters:', filters);
       const bookingsData = await getAllBookings(token, filters);
+      console.log('📅 Bookings API response:', bookingsData.length, 'bookings');
       const transformedBookings = bookingsData.map((booking: any) => ({
         id: booking.id.toString(),
         date: new Date(booking.booked_date),

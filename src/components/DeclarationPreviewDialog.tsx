@@ -86,7 +86,7 @@ export function DeclarationPreviewDialog({
         allOwners.forEach(owner => {
             initSignatures[owner.id] = {
                 type: owner.isPrimary ? "primary" : "secondary",
-                name: "",
+                name: owner.name, // Autofill name for owners/co-owners
                 image: null,
                 ownerName: owner.name
             };
@@ -156,22 +156,42 @@ export function DeclarationPreviewDialog({
     };
 
     const handleGenerateDeclaration = async () => {
-        // Validate Part 1 signatures - at least one required
+        // Validate Part 1 signatures - all owners required OR POA for missing owners
         const part1ValidSignatures = Object.values(part1Signatures).filter(
             sig => sig.name.trim() && sig.image
         );
+        
+        // Check if all owners have signed or have POA representation
+        const totalOwners = allOwners.length;
+        const ownerSignatures = part1ValidSignatures.filter(sig => sig.type !== 'poa');
+        const poaSignatures = part1ValidSignatures.filter(sig => sig.type === 'poa');
+        
+        if (ownerSignatures.length < totalOwners && poaSignatures.length === 0) {
+            toast.error(`All ${totalOwners} owner(s) must sign OR provide POA authorization for missing signatures`);
+            return;
+        }
+        
         if (part1ValidSignatures.length === 0) {
-            toast.error("At least one owner must sign Part 1 (Declaration)");
+            toast.error("At least one signature is required for Part 1 (Declaration)");
             return;
         }
 
-        // Validate Part 2 signatures (only if defects exist) - at least one required
+        // Validate Part 2 signatures (only if defects exist) - all owners required OR POA for missing owners
         if (defects && defects.length > 0) {
             const part2ValidSignatures = Object.values(part2Signatures).filter(
                 sig => sig.name.trim() && sig.image
             );
+            
+            const part2OwnerSignatures = part2ValidSignatures.filter(sig => sig.type !== 'poa');
+            const part2PoaSignatures = part2ValidSignatures.filter(sig => sig.type === 'poa');
+            
+            if (part2OwnerSignatures.length < totalOwners && part2PoaSignatures.length === 0) {
+                toast.error(`All ${totalOwners} owner(s) must sign Part 2 OR provide POA authorization for missing signatures`);
+                return;
+            }
+            
             if (part2ValidSignatures.length === 0) {
-                toast.error("At least one owner must sign Part 2 (Defects acknowledgement)");
+                toast.error("At least one signature is required for Part 2 (Defects acknowledgement)");
                 return;
             }
         }
@@ -271,9 +291,14 @@ export function DeclarationPreviewDialog({
                     </div>
                 ) : (
                     <>
-                        <p className="text-sm text-gray-600 mb-4">
-                            At least one owner must sign this section. Multiple owners can sign if desired.
-                        </p>
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded mb-4">
+                            <p className="text-sm text-gray-800 font-medium mb-2">
+                                📝 Signature Requirements:
+                            </p>
+                            <p className="text-xs text-gray-700 leading-relaxed">
+                                <strong>All {allOwners.length} owner(s) must sign</strong> this section. If any owner cannot sign in person, a Power of Attorney (POA) signature is required on their behalf.
+                            </p>
+                        </div>
 
                         {allOwners.map((owner, index) => {
                             const ownerId = owner.id.toString();
@@ -750,6 +775,16 @@ export function DeclarationPreviewDialog({
                         setPart1Signatures,
                         part1Signed
                     )}
+
+                    {/* Acknowledgement */}
+                    <div className="mt-8 pt-6 border-t-2 border-gray-300">
+                        <h3 className="font-semibold text-base mb-4">Acknowledgement</h3>
+                        <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                            <p className="text-sm text-gray-800 italic leading-relaxed">
+                                I hereby confirm that I have read and understood the declaration of adherence and acknowledgement letter and received the keys for the above-mentioned unit.
+                            </p>
+                        </div>
+                    </div>
 
                     <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded mt-4">
                         <p className="text-xs text-gray-700 leading-relaxed">
