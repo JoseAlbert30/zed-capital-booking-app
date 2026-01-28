@@ -839,18 +839,23 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                     },
                   }}
                   disabled={(date) => {
+                    // Disable all dates if POA is required but documents not uploaded
+                    if (isOwnerAttending === false && (!poaDocument || !attorneyIdDocument)) {
+                      return true;
+                    }
+                    
                     // Disable past dates
                     if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true;
                     
-                    // Block today and the next 2 days (3 days blocked total)
+                    // Block today and the next 3 days (4 days blocked total)
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
                     const earliestBookableDate = new Date(today);
-                    earliestBookableDate.setDate(earliestBookableDate.getDate() + 3);
+                    earliestBookableDate.setDate(earliestBookableDate.getDate() + 4);
                     
-                    // Set maximum bookable date: 3rd blocked day + 30 days
+                    // Set maximum bookable date: 4th blocked day + 30 days
                     const maxBookableDate = new Date(today);
-                    maxBookableDate.setDate(maxBookableDate.getDate() + 3 + 30); // Day after 3 blocked days + 30 days
+                    maxBookableDate.setDate(maxBookableDate.getDate() + 4 + 30); // Day after 4 blocked days + 30 days
                     
                     // Disable dates before the earliest bookable date
                     const checkDate = new Date(date);
@@ -877,6 +882,11 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                   <Clock className="w-5 h-5 md:w-6 md:h-6" />
                   Available Time Slots
                 </Label>
+                {isOwnerAttending === false && (!poaDocument || !attorneyIdDocument) ? (
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
+                    <p className="text-sm text-orange-800">Please upload both POA and Attorney ID documents to select a time slot</p>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-3">
                   {TIME_SLOTS.map((time) => {
                     const isAvailable = availableSlots.includes(time);
@@ -901,6 +911,7 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
                     );
                   })}
                 </div>
+                )}
               </div>
               )}
 

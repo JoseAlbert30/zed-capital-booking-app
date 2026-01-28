@@ -41,12 +41,10 @@ export function DeclarationPreviewDialog({
     // Multiple signatures for each part (one per potential signer)
     const [part1Signatures, setPart1Signatures] = useState<Record<string, SignatureData>>({});
     const [part2Signatures, setPart2Signatures] = useState<Record<string, SignatureData>>({});
-    const [part3Signatures, setPart3Signatures] = useState<Record<string, SignatureData>>({});
 
     // Track which parts have been signed
     const [part1Signed, setPart1Signed] = useState(false);
     const [part2Signed, setPart2Signed] = useState(false);
-    const [part3Signed, setPart3Signed] = useState(false);
 
     // Drawing state for each owner
     const [drawingStates, setDrawingStates] = useState<Record<string, boolean>>({});
@@ -124,21 +122,6 @@ export function DeclarationPreviewDialog({
             setPart2Signatures(initSignatures);
             setPart2Signed(false);
         }
-
-        if (booking?.declaration_part3_signatures && Array.isArray(booking.declaration_part3_signatures)) {
-            const savedPart3: Record<string, SignatureData> = { ...initSignatures };
-            booking.declaration_part3_signatures.forEach((sig: SignatureData) => {
-                const owner = allOwners.find(o => o.name === sig.ownerName);
-                if (owner) {
-                    savedPart3[owner.id] = sig;
-                }
-            });
-            setPart3Signatures(savedPart3);
-            setPart3Signed(true);
-        } else {
-            setPart3Signatures(initSignatures);
-            setPart3Signed(false);
-        }
     }, [allOwners, booking]);
 
     // Check if all defects are remediated
@@ -162,7 +145,6 @@ export function DeclarationPreviewDialog({
             // Update signed status
             if (part === 1) setPart1Signed(true);
             if (part === 2) setPart2Signed(true);
-            if (part === 3) setPart3Signed(true);
 
             toast.success(`Part ${part} signatures saved!`);
         } catch (error) {
@@ -194,17 +176,6 @@ export function DeclarationPreviewDialog({
             }
         }
 
-        // Validate Part 3 signatures - only required if no defects OR all defects remediated
-        if (allDefectsRemediated) {
-            const part3ValidSignatures = Object.values(part3Signatures).filter(
-                sig => sig.name.trim() && sig.image
-            );
-            if (part3ValidSignatures.length === 0) {
-                toast.error("At least one owner must sign Part 3 (Final acknowledgement)");
-                return;
-            }
-        }
-
         try {
             setGeneratingPDF(true);
 
@@ -214,9 +185,6 @@ export function DeclarationPreviewDialog({
             const signaturesData = {
                 part1: part1ValidSignatures,
                 part2: defects && defects.length > 0 ? Object.values(part2Signatures).filter(
-                    sig => sig.name.trim() && sig.image
-                ) : null,
-                part3: allDefectsRemediated ? Object.values(part3Signatures).filter(
                     sig => sig.name.trim() && sig.image
                 ) : null
             };
@@ -296,7 +264,6 @@ export function DeclarationPreviewDialog({
                             onClick={() => {
                                 if (partNumber === 1) setPart1Signed(false);
                                 if (partNumber === 2) setPart2Signed(false);
-                                if (partNumber === 3) setPart3Signed(false);
                             }}
                         >
                             Re-sign this section
@@ -843,55 +810,10 @@ export function DeclarationPreviewDialog({
                             )}
                             <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded mt-4">
                                 <p className="text-xs text-gray-700 leading-relaxed">
-                                    <strong className="text-blue-800">Note:</strong> This signature acknowledges your review and acceptance of the snagging defects listed above.
+                                    <strong className="text-blue-800">Note:</strong> This signature acknowledges your review and acceptance of the snagging defects listed above. Defects will be marked as resolved upon declaration generation.
                                 </p>
                             </div>
                         </>
-                    )}
-
-                    <div className="border-b mt-4"></div>
-
-                    {/* Acknowledgement Section */}
-                    <div>
-                        <h3 className="font-semibold text-sm mb-3 uppercase">Acknowledgement:</h3>
-                        <p className="text-sm text-gray-800 mb-4">
-                            I hereby confirm that I am in receipt of the keys for the above-mentioned unit after the defects in the unit have been rectified.
-                        </p>
-                    </div>
-
-                    {/* Part 3: Final Acknowledgement Signature - Only if no defects OR all remediated */}
-                    {allDefectsRemediated ? (
-                        <>
-                            {renderMultiOwnerSignatureSection(
-                                "Part 3: Final Acknowledgement Signature",
-                                3,
-                                part3Signatures,
-                                setPart3Signatures,
-                                part3Signed
-                            )}
-
-                            <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded mt-4">
-                                <p className="text-xs text-gray-700 leading-relaxed">
-                                    <strong className="text-green-800">Final Confirmation:</strong> This signature confirms receipt of keys after defects have been rectified.
-                                </p>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="bg-yellow-50 border-l-4 border-yellow-500 p-6 rounded mt-4">
-                            <div className="flex items-start gap-3">
-                                <div className="flex-shrink-0">
-                                    <svg className="w-6 h-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                    </svg>
-                                </div>
-                                <div className="flex-1">
-                                    <h4 className="text-sm font-semibold text-yellow-800 mb-2">Final Acknowledgement Not Available</h4>
-                                    <p className="text-sm text-yellow-700">
-                                        The final acknowledgement signature cannot be completed until all snagging defects have been remediated. Please contact the property management team to confirm when all defects have been addressed.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
                     )}
                 </div>
                 </div>
