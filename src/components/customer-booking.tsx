@@ -84,6 +84,9 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
     console.log('selectedDate getFullYear():', selectedDate?.getFullYear());
     console.log('selectedTime:', selectedTime);
     console.log('selectedUnitId:', selectedUnitId);
+    console.log('isOwnerAttending:', isOwnerAttending);
+    console.log('poaDocument:', poaDocument);
+    console.log('attorneyIdDocument:', attorneyIdDocument);
     
     if (selectedDate && selectedTime && selectedUnitId && isOwnerAttending !== null) {
       setIsBooking(true);
@@ -91,6 +94,12 @@ export function CustomerBooking({ userEmail, onLogout, bookings, onCreateBooking
       
       try {
         const unit = currentUser?.units?.find(u => u.id === selectedUnitId);
+        
+        console.log('Calling onCreateBooking with:', {
+          isOwnerAttending,
+          hasPoaDoc: !!poaDocument,
+          hasAttorneyId: !!attorneyIdDocument,
+        });
         
         await onCreateBooking({
           date: selectedDate,
