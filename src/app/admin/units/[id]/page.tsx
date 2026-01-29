@@ -591,20 +591,12 @@ export default function UnitDetailsPage() {
                     <p className="text-sm text-gray-500">Location</p>
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-gray-400" />
-                      <p className="font-medium">{unit.property.location}</p>
+                      <p className="font-medium">Dubai Islands, Dubai</p>
                     </div>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Floor</p>
-                    <p className="font-medium">{unit.floor || "N/A"}</p>
-                  </div>
-                  <div>
                     <p className="text-sm text-gray-500">Building</p>
-                    <p className="font-medium">{unit.building || "N/A"}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Square Footage</p>
-                    <p className="font-medium">{unit.square_footage} sq ft</p>
+                    <p className="font-medium">Viera Residences</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">DEWA Premise No.</p>
